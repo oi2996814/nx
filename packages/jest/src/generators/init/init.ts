@@ -72,6 +72,8 @@ function updateDependencies(tree: Tree, options: NormalizedSchema) {
     devDeps['@swc/jest'] = swcJestVersion;
   } else {
     devDeps['ts-jest'] = tsJestVersion;
+    // in some cases @nrwl/web will not already be present i.e. node only projects
+    devDeps['@nrwl/web'] = nxVersion;
   }
 
   return addDependenciesToPackageJson(tree, dependencies, devDeps);
