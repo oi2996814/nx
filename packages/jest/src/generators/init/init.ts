@@ -68,12 +68,12 @@ function updateDependencies(tree: Tree, options: NormalizedSchema) {
 
   if (options.compiler === 'babel' || options.babelJest) {
     devDeps['babel-jest'] = babelJestVersion;
+    // in some cases @nrwl/web will not already be present i.e. node only projects
+    devDeps['@nrwl/web'] = nxVersion;
   } else if (options.compiler === 'swc') {
     devDeps['@swc/jest'] = swcJestVersion;
   } else {
     devDeps['ts-jest'] = tsJestVersion;
-    // in some cases @nrwl/web will not already be present i.e. node only projects
-    devDeps['@nrwl/web'] = nxVersion;
   }
 
   return addDependenciesToPackageJson(tree, dependencies, devDeps);
