@@ -1,21 +1,35 @@
-import { toOldFormatOrNull, Workspaces } from '../config/workspaces';
 import { execSync } from 'child_process';
 import { existsSync, readFileSync } from 'fs';
-import { extname, join, relative, sep } from 'path';
+import { basename, extname, join, relative, sep } from 'path';
 import { readNxJson } from '../config/configuration';
-import { NxJsonConfiguration } from '../config/nx-json';
 import { FileData } from '../config/project-graph';
-import { ProjectsConfigurations } from '../config/workspace-json-project-json';
+import {
+  ProjectConfiguration,
+  ProjectsConfigurations,
+} from '../config/workspace-json-project-json';
 import type { NxArgs } from '../utils/command-line-utils';
 import { workspaceRoot } from '../utils/workspace-root';
-import { fileExists } from '../utils/fileutils';
-import { jsonDiff } from '../utils/json-diff';
-import ignore from 'ignore';
 import { readJsonFile } from '../utils/fileutils';
+import { jsonDiff } from '../utils/json-diff';
 import {
   readCachedProjectGraph,
   readProjectsConfigurationFromProjectGraph,
 } from './project-graph';
+import { toOldFormat } from '../adapter/angular-json';
+import { getIgnoreObject } from '../utils/ignore';
+import {
+  mergeProjectConfigurationIntoRootMap,
+  readProjectConfigurationsFromRootMap,
+} from './utils/project-configuration-utils';
+import {
+  buildPackageJsonWorkspacesMatcher,
+  buildProjectConfigurationFromPackageJson,
+  getGlobPatternsFromPackageManagerWorkspaces,
+} from '../plugins/package-json';
+import { globWithWorkspaceContextSync } from '../utils/workspace-context';
+import { buildProjectFromProjectJson } from '../plugins/project-json/build-nodes/project-json';
+import { PackageJson } from '../utils/package-json';
+import { NxJsonConfiguration } from '../config/nx-json';
 
 export interface Change {
   type: string;
@@ -43,17 +57,6 @@ export function isDeletedFileChange(
   return change.type === 'WholeFileDeleted';
 }
 
-export function readFileIfExisting(path: string) {
-  return existsSync(path) ? readFileSync(path, 'utf-8') : '';
-}
-
-function getIgnoredGlobs() {
-  const ig = ignore();
-  ig.add(readFileIfExisting(`${workspaceRoot}/.gitignore`));
-  ig.add(readFileIfExisting(`${workspaceRoot}/.nxignore`));
-  return ig;
-}
-
 export function calculateFileChanges(
   files: string[],
   allWorkspaceFiles: FileData[],
@@ -62,7 +65,7 @@ export function calculateFileChanges(
     f: string,
     r: void | string
   ) => string = defaultReadFileAtRevision,
-  ignore = getIgnoredGlobs()
+  ignore = getIgnoreObject() as ReturnType<typeof ignore>
 ): FileChange[] {
   files = files.filter((f) => !ignore.ignores(f));
 
@@ -89,9 +92,9 @@ export function calculateFileChanges(
         }
         switch (ext) {
           case '.json':
-            const atBase = readFileAtRevision(f, nxArgs.base);
-            const atHead = readFileAtRevision(f, nxArgs.head);
             try {
+              const atBase = readFileAtRevision(f, nxArgs.base);
+              const atHead = readFileAtRevision(f, nxArgs.head);
               return jsonDiff(JSON.parse(atBase), JSON.parse(atHead));
             } catch (e) {
               return [new WholeFileChange()];
@@ -122,6 +125,8 @@ function defaultReadFileAtRevision(
       ? readFileSync(file, 'utf-8')
       : execSync(`git show ${revision}:${filePathInGitRepository}`, {
           maxBuffer: TEN_MEGABYTES,
+          stdio: ['pipe', 'pipe', 'ignore'],
+          windowsHide: false,
         })
           .toString()
           .trim();
@@ -130,34 +135,33 @@ function defaultReadFileAtRevision(
   }
 }
 
+/**
+ * TODO(v21): Remove this function
+ * @deprecated To get projects use {@link retrieveProjectConfigurations} instead. This will be removed in v21.
+ */
 export function readWorkspaceConfig(opts: {
   format: 'angularCli' | 'nx';
   path?: string;
-}): ProjectsConfigurations & NxJsonConfiguration {
-  let configuration: (ProjectsConfigurations & NxJsonConfiguration) | null;
+}): ProjectsConfigurations {
+  let configuration: ProjectsConfigurations | null = null;
+  const root = opts.path || process.cwd();
+  const nxJson = readNxJson(root);
   try {
     const projectGraph = readCachedProjectGraph();
     configuration = {
-      ...readNxJson(),
+      ...nxJson,
       ...readProjectsConfigurationFromProjectGraph(projectGraph),
     };
   } catch {
-    const ws = new Workspaces(opts.path || process.cwd());
-    configuration = ws.readWorkspaceConfiguration();
+    configuration = {
+      version: 2,
+      projects: getProjectsSync(root, nxJson),
+    };
   }
   if (opts.format === 'angularCli') {
-    const formatted = toOldFormatOrNull(configuration);
-    return formatted ?? configuration;
+    return toOldFormat(configuration);
   } else {
     return configuration;
-  }
-}
-
-export function workspaceFileName() {
-  if (fileExists(`${workspaceRoot}/angular.json`)) {
-    return 'angular.json';
-  } else {
-    return 'workspace.json';
   }
 }
 
@@ -165,15 +169,80 @@ export function defaultFileRead(filePath: string): string | null {
   return readFileSync(join(workspaceRoot, filePath), 'utf-8');
 }
 
-export function readPackageJson(): any {
-  return readJsonFile(`${workspaceRoot}/package.json`);
+export function readPackageJson(root: string = workspaceRoot): any {
+  try {
+    return readJsonFile(`${root}/package.json`);
+  } catch {
+    return {}; // if package.json doesn't exist
+  }
 }
+
 // Original Exports
 export { FileData };
 
-// TODO(v16): Remove these exports
-export {
-  readNxJson,
-  readAllWorkspaceConfiguration,
-  workspaceLayout,
-} from '../config/configuration';
+/**
+ * TODO(v21): Remove this function.
+ */
+function getProjectsSync(
+  root: string,
+  nxJson: NxJsonConfiguration
+): {
+  [name: string]: ProjectConfiguration;
+} {
+  /**
+   * We can't update projects that come from plugins anyways, so we are going
+   * to ignore them for now. Plugins should add their own add/create/update methods
+   * if they would like to use devkit to update inferred projects.
+   */
+  const patterns = [
+    '**/project.json',
+    'project.json',
+    ...getGlobPatternsFromPackageManagerWorkspaces(root, readJsonFile),
+  ];
+  const projectFiles = globWithWorkspaceContextSync(root, patterns);
+
+  const isInPackageJsonWorkspaces = buildPackageJsonWorkspacesMatcher(
+    root,
+    (f) => readJsonFile(join(root, f))
+  );
+
+  const rootMap: Record<string, ProjectConfiguration> = {};
+  for (const projectFile of projectFiles) {
+    if (basename(projectFile) === 'project.json') {
+      const json = readJsonFile(projectFile);
+      const config = buildProjectFromProjectJson(json, projectFile);
+      mergeProjectConfigurationIntoRootMap(
+        rootMap,
+        config,
+        undefined,
+        undefined,
+        true
+      );
+    } else if (basename(projectFile) === 'package.json') {
+      const packageJson = readJsonFile<PackageJson>(projectFile);
+      const config = buildProjectConfigurationFromPackageJson(
+        packageJson,
+        root,
+        projectFile,
+        nxJson,
+        isInPackageJsonWorkspaces(projectFile)
+      );
+      if (!rootMap[config.root]) {
+        mergeProjectConfigurationIntoRootMap(
+          rootMap,
+          // Inferred targets, tags, etc don't show up when running generators
+          // This is to help avoid running into issues when trying to update the workspace
+          {
+            name: config.name,
+            root: config.root,
+          },
+          undefined,
+          undefined,
+          true
+        );
+      }
+    }
+  }
+
+  return readProjectConfigurationsFromRootMap(rootMap);
+}

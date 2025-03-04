@@ -5,14 +5,20 @@ auth:
   htpasswd:
     file: ./htpasswd
 
+max_body_size: 15mb
+
 # a list of other known repositories we can talk to
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
-    cache: true
+    maxage: 60m
+    max_fails: 20
+    fail_timeout: 2m
   yarn:
     url: https://registry.yarnpkg.com
-    cache: true
+    maxage: 60m
+    max_fails: 20
+    fail_timeout: 2m
 
 packages:
   '@*/*':
@@ -38,4 +44,7 @@ packages:
 logs:
   type: stdout
   format: pretty
-  level: http
+  level: warn
+
+publish:
+  allow_offline: true # set offline to true to allow publish offline

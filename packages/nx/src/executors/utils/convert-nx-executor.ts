@@ -1,15 +1,14 @@
 /**
- * This is a copy of the @nrwl/devkit utility but this should not be used outside of the nx package
+ * This is a copy of the @nx/devkit utility but this should not be used outside of the nx package
  */
 
 import type { Observable } from 'rxjs';
-import { Workspaces } from '../../config/workspaces';
+import { readNxJson } from '../../config/nx-json';
 import { Executor, ExecutorContext } from '../../config/misc-interfaces';
-import {
-  createProjectGraphAsync,
-  readCachedProjectGraph,
-} from '../../project-graph/project-graph';
-import { ProjectGraph } from '../../config/project-graph';
+import { retrieveProjectConfigurations } from '../../project-graph/utils/retrieve-workspace-files';
+import { readProjectConfigurationsFromRootMap } from '../../project-graph/utils/project-configuration-utils';
+import { ProjectsConfigurations } from '../../config/workspace-json-project-json';
+import { getPlugins } from '../../project-graph/plugins/get-plugins';
 
 /**
  * Convert an Nx Executor into an Angular Devkit Builder
@@ -18,25 +17,33 @@ import { ProjectGraph } from '../../config/project-graph';
  */
 export function convertNxExecutor(executor: Executor) {
   const builderFunction = (options, builderContext) => {
-    const workspaces = new Workspaces(builderContext.workspaceRoot);
-    const workspaceConfig = workspaces.readWorkspaceConfiguration();
-
     const promise = async () => {
-      let projectGraph: ProjectGraph;
-      try {
-        projectGraph = readCachedProjectGraph();
-      } catch {
-        projectGraph = await createProjectGraphAsync();
-      }
+      const nxJsonConfiguration = readNxJson(builderContext.workspaceRoot);
+
+      const plugins = await getPlugins();
+      const projectsConfigurations: ProjectsConfigurations = {
+        version: 2,
+        projects: readProjectConfigurationsFromRootMap(
+          (
+            await retrieveProjectConfigurations(
+              plugins,
+              builderContext.workspaceRoot,
+              nxJsonConfiguration
+            )
+          ).projects
+        ),
+      };
       const context: ExecutorContext = {
         root: builderContext.workspaceRoot,
         projectName: builderContext.target.project,
         targetName: builderContext.target.target,
         target: builderContext.target.target,
         configurationName: builderContext.target.configuration,
-        workspace: workspaceConfig,
+        projectsConfigurations,
+        nxJsonConfiguration,
         cwd: process.cwd(),
-        projectGraph,
+        projectGraph: null,
+        taskGraph: null,
         isVerbose: false,
       };
       return executor(options, context);
@@ -51,39 +58,43 @@ function toObservable<T extends { success: boolean }>(
 ): Observable<T> {
   return new (require('rxjs') as typeof import('rxjs')).Observable(
     (subscriber) => {
-      promiseOrAsyncIterator.then((value) => {
-        if (!(value as any).next) {
-          subscriber.next(value as T);
-          subscriber.complete();
-        } else {
-          let asyncIterator = value as AsyncIterableIterator<T>;
+      promiseOrAsyncIterator
+        .then((value) => {
+          if (!(value as any).next) {
+            subscriber.next(value as T);
+            subscriber.complete();
+          } else {
+            let asyncIterator = value as AsyncIterableIterator<T>;
 
-          function recurse(iterator: AsyncIterableIterator<T>) {
-            iterator
-              .next()
-              .then((result) => {
-                if (!result.done) {
-                  subscriber.next(result.value);
-                  recurse(iterator);
-                } else {
-                  if (result.value) {
+            function recurse(iterator: AsyncIterableIterator<T>) {
+              iterator
+                .next()
+                .then((result) => {
+                  if (!result.done) {
                     subscriber.next(result.value);
+                    recurse(iterator);
+                  } else {
+                    if (result.value) {
+                      subscriber.next(result.value);
+                    }
+                    subscriber.complete();
                   }
-                  subscriber.complete();
-                }
-              })
-              .catch((e) => {
-                subscriber.error(e);
-              });
+                })
+                .catch((e) => {
+                  subscriber.error(e);
+                });
+            }
+
+            recurse(asyncIterator);
+
+            return () => {
+              asyncIterator.return();
+            };
           }
-
-          recurse(asyncIterator);
-
-          return () => {
-            asyncIterator.return();
-          };
-        }
-      });
+        })
+        .catch((err) => {
+          subscriber.error(err);
+        });
     }
   );
 }

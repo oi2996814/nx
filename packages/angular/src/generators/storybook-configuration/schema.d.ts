@@ -1,14 +1,12 @@
-import type { Linter } from '@nrwl/linter';
+import type { Linter, LinterType } from '@nx/eslint';
 
 export interface StorybookConfigurationOptions {
-  configureCypress: boolean;
-  generateCypressSpecs: boolean;
+  configureStaticServe?: boolean;
   generateStories: boolean;
-  linter: Linter;
-  name: string;
-  cypressDirectory?: string;
+  linter: Linter | LinterType;
+  project: string;
   tsConfiguration?: boolean;
   skipFormat?: boolean;
   ignorePaths?: string[];
-  configureTestRunner?: boolean;
+  interactionTests?: boolean;
 }

@@ -1,50 +1,72 @@
-import { installedCypressVersion } from '@nrwl/cypress/src/utils/cypress-version';
+import { installedCypressVersion } from '@nx/cypress/src/utils/cypress-version';
 import {
   DependencyType,
   joinPathFragments,
   ProjectGraph,
+  readJson,
   readProjectConfiguration,
   Tree,
-} from '@nrwl/devkit';
-import { createTreeWithEmptyWorkspace } from '@nrwl/devkit/testing';
-import { applicationGenerator } from '../application/application';
-import { componentGenerator } from '../component/component';
-import librarySecondaryEntryPointGenerator from '../library-secondary-entry-point/library-secondary-entry-point';
-import { libraryGenerator } from '../library/library';
-import { cypressComponentConfiguration } from './cypress-component-configuration';
+  updateProjectConfiguration,
+} from '@nx/devkit';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
 
-let projectGraph: ProjectGraph;
-jest.mock('@nrwl/cypress/src/utils/cypress-version');
-jest.mock('@nrwl/devkit', () => ({
-  ...jest.requireActual<any>('@nrwl/devkit'),
+let projectGraph: ProjectGraph = { nodes: {}, dependencies: {} };
+jest.mock('@nx/devkit', () => ({
+  ...jest.requireActual<any>('@nx/devkit'),
   createProjectGraphAsync: jest
     .fn()
     .mockImplementation(async () => projectGraph),
 }));
+
+import { componentGenerator } from '../component/component';
+import { librarySecondaryEntryPointGenerator } from '../library-secondary-entry-point/library-secondary-entry-point';
+import { generateTestApplication, generateTestLibrary } from '../utils/testing';
+import { cypressComponentConfiguration } from './cypress-component-configuration';
+
+jest.mock('@nx/cypress/src/utils/cypress-version');
+// nested code imports graph from the repo, which might have innacurate graph version
+jest.mock('nx/src/project-graph/project-graph', () => ({
+  ...jest.requireActual<any>('nx/src/project-graph/project-graph'),
+  readCachedProjectGraph: jest.fn().mockImplementation(() => projectGraph),
+}));
+
 describe('Cypress Component Testing Configuration', () => {
   let tree: Tree;
   let mockedInstalledCypressVersion: jest.Mock<
     ReturnType<typeof installedCypressVersion>
   > = installedCypressVersion as never;
+  // TODO(@leosvelperez): Turn this to adding the plugin
 
   beforeEach(() => {
-    tree = createTreeWithEmptyWorkspace();
+    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
     tree.write('.gitignore', '');
     mockedInstalledCypressVersion.mockReturnValue(10);
+
+    projectGraph = {
+      dependencies: {},
+      nodes: {},
+    };
+  });
+
+  afterEach(() => {
+    jest.clearAllMocks();
   });
 
   describe('updateProjectConfig', () => {
     it('should add project config with --target=<project>:<target>', async () => {
-      await applicationGenerator(tree, {
-        name: 'fancy-app',
+      await generateTestApplication(tree, {
+        directory: 'fancy-app',
+        skipFormat: true,
       });
-      await libraryGenerator(tree, {
-        name: 'fancy-lib',
+      await generateTestLibrary(tree, {
+        directory: 'fancy-lib',
+        skipFormat: true,
       });
       await componentGenerator(tree, {
         name: 'fancy-cmp',
-        project: 'fancy-lib',
+        path: 'fancy-lib/src/lib/fancy-cmp/fancy-cmp',
         export: true,
+        skipFormat: true,
       });
       projectGraph = {
         nodes: {
@@ -62,7 +84,7 @@ describe('Cypress Component Testing Configuration', () => {
               ...readProjectConfiguration(tree, 'fancy-lib'),
             },
           },
-        },
+        } as any,
         dependencies: {
           'fancy-app': [
             {
@@ -73,22 +95,23 @@ describe('Cypress Component Testing Configuration', () => {
           ],
         },
       };
+
       await cypressComponentConfiguration(tree, {
         project: 'fancy-lib',
         buildTarget: 'fancy-app:build',
         generateTests: false,
+        skipFormat: true,
       });
+
       expect(
-        tree.exists(
-          'libs/fancy-lib/src/lib/fancy-cmp/fancy-cmp.component.cy.ts'
-        )
+        tree.exists('fancy-lib/src/lib/fancy-cmp/fancy-cmp.component.cy.ts')
       ).toBeFalsy();
       expect(
         readProjectConfiguration(tree, 'fancy-lib').targets['component-test']
       ).toEqual({
-        executor: '@nrwl/cypress:cypress',
+        executor: '@nx/cypress:cypress',
         options: {
-          cypressConfig: 'libs/fancy-lib/cypress.config.ts',
+          cypressConfig: 'fancy-lib/cypress.config.ts',
           devServerTarget: 'fancy-app:build',
           skipServe: true,
           testingType: 'component',
@@ -97,16 +120,19 @@ describe('Cypress Component Testing Configuration', () => {
     });
 
     it('should add project config with --target=<project>:<target>:<config>', async () => {
-      await applicationGenerator(tree, {
-        name: 'fancy-app',
+      await generateTestApplication(tree, {
+        directory: 'fancy-app',
+        skipFormat: true,
       });
-      await libraryGenerator(tree, {
-        name: 'fancy-lib',
+      await generateTestLibrary(tree, {
+        directory: 'fancy-lib',
+        skipFormat: true,
       });
       await componentGenerator(tree, {
         name: 'fancy-cmp',
-        project: 'fancy-lib',
+        path: 'fancy-lib/src/lib/fancy-cmp/fancy-cmp',
         export: true,
+        skipFormat: true,
       });
       projectGraph = {
         nodes: {
@@ -116,13 +142,13 @@ describe('Cypress Component Testing Configuration', () => {
             data: {
               ...readProjectConfiguration(tree, 'fancy-app'),
             },
-          },
+          } as any,
           'fancy-lib': {
             name: 'fancy-lib',
             type: 'lib',
             data: {
               ...readProjectConfiguration(tree, 'fancy-lib'),
-            },
+            } as any,
           },
         },
         dependencies: {
@@ -135,22 +161,23 @@ describe('Cypress Component Testing Configuration', () => {
           ],
         },
       };
+
       await cypressComponentConfiguration(tree, {
         project: 'fancy-lib',
         buildTarget: 'fancy-app:build:development',
         generateTests: false,
+        skipFormat: true,
       });
+
       expect(
-        tree.exists(
-          'libs/fancy-lib/src/lib/fancy-cmp/fancy-cmp.component.cy.ts'
-        )
+        tree.exists('fancy-lib/src/lib/fancy-cmp/fancy-cmp.component.cy.ts')
       ).toBeFalsy();
       expect(
         readProjectConfiguration(tree, 'fancy-lib').targets['component-test']
       ).toEqual({
-        executor: '@nrwl/cypress:cypress',
+        executor: '@nx/cypress:cypress',
         options: {
-          cypressConfig: 'libs/fancy-lib/cypress.config.ts',
+          cypressConfig: 'fancy-lib/cypress.config.ts',
           devServerTarget: 'fancy-app:build:development',
           skipServe: true,
           testingType: 'component',
@@ -158,30 +185,76 @@ describe('Cypress Component Testing Configuration', () => {
       });
     });
 
-    it('should throw if --build-target is invalid', async () => {
-      await libraryGenerator(tree, {
-        name: 'fancy-lib',
+    it('should not throw with invalid --build-target', async () => {
+      await generateTestApplication(tree, {
+        directory: 'fancy-app',
+        skipFormat: true,
       });
-      await expect(
-        cypressComponentConfiguration(tree, {
-          project: 'fancy-lib',
-          buildTarget: 'fancy-app:build:development',
-          generateTests: false,
-        })
-      ).rejects
-        .toThrow(`Error trying to find build configuration. Try manually specifying the build target with the --build-target flag.
-Provided project? fancy-lib
-Provided build target? fancy-app:build:development
-Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular:browser`);
-    });
-    it('should use own project config', async () => {
-      await applicationGenerator(tree, {
-        name: 'fancy-app',
+      await generateTestLibrary(tree, {
+        directory: 'fancy-lib',
+        skipFormat: true,
       });
       await componentGenerator(tree, {
         name: 'fancy-cmp',
-        project: 'fancy-app',
+        path: 'fancy-lib/src/lib/fancy-cmp/fancy-cmp/',
         export: true,
+        skipFormat: true,
+      });
+
+      jest.clearAllMocks();
+
+      const appConfig = readProjectConfiguration(tree, 'fancy-app');
+      appConfig.targets['build'].executor = 'something/else';
+      updateProjectConfiguration(tree, 'fancy-app', appConfig);
+      projectGraph = {
+        nodes: {
+          'fancy-app': {
+            name: 'fancy-app',
+            type: 'app',
+            data: {
+              ...appConfig,
+            } as any,
+          },
+          'fancy-lib': {
+            name: 'fancy-lib',
+            type: 'lib',
+            data: {
+              ...readProjectConfiguration(tree, 'fancy-lib'),
+            } as any,
+          },
+        },
+        dependencies: {
+          'fancy-app': [
+            {
+              type: DependencyType.static,
+              source: 'fancy-app',
+              target: 'fancy-lib',
+            },
+          ],
+        },
+      };
+
+      await expect(async () => {
+        await cypressComponentConfiguration(tree, {
+          project: 'fancy-lib',
+          buildTarget: 'fancy-app:build',
+          generateTests: false,
+          skipFormat: true,
+        });
+      }).resolves;
+    });
+
+    it('should use own project config', async () => {
+      await generateTestApplication(tree, {
+        directory: 'fancy-app',
+        bundler: 'webpack',
+        skipFormat: true,
+      });
+      await componentGenerator(tree, {
+        name: 'fancy-cmp',
+        path: 'fancy-app/src/lib/fancy-cmp/fancy-cmp',
+        export: true,
+        skipFormat: true,
       });
       projectGraph = {
         nodes: {
@@ -190,21 +263,24 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
             type: 'app',
             data: {
               ...readProjectConfiguration(tree, 'fancy-app'),
-            },
+            } as any,
           },
         },
         dependencies: {},
       };
+
       await cypressComponentConfiguration(tree, {
         project: 'fancy-app',
         generateTests: false,
+        skipFormat: true,
       });
+
       expect(
         readProjectConfiguration(tree, 'fancy-app').targets['component-test']
       ).toEqual({
-        executor: '@nrwl/cypress:cypress',
+        executor: '@nx/cypress:cypress',
         options: {
-          cypressConfig: 'apps/fancy-app/cypress.config.ts',
+          cypressConfig: 'fancy-app/cypress.config.ts',
           devServerTarget: 'fancy-app:build',
           skipServe: true,
           testingType: 'component',
@@ -213,19 +289,23 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
     });
 
     it('should use the project graph to find the correct project config', async () => {
-      await applicationGenerator(tree, {
-        name: 'fancy-app',
+      await generateTestApplication(tree, {
+        directory: 'fancy-app',
+        bundler: 'webpack',
+        skipFormat: true,
       });
-      await libraryGenerator(tree, {
-        name: 'fancy-lib',
+      await generateTestLibrary(tree, {
+        directory: 'fancy-lib',
+        skipFormat: true,
       });
       await componentGenerator(tree, {
         name: 'fancy-cmp',
-        project: 'fancy-lib',
+        path: 'fancy-app/src/app/fancy-lib/fancy-lib',
         export: true,
+        skipFormat: true,
       });
       tree.write(
-        'apps/fancy-app/src/app/blah.component.ts',
+        'fancy-app/src/app/blah.component.ts',
         `import {FancyCmpComponent} from '@something/fancy-lib'`
       );
       projectGraph = {
@@ -235,14 +315,14 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
             type: 'app',
             data: {
               ...readProjectConfiguration(tree, 'fancy-app'),
-            },
+            } as any,
           },
           'fancy-lib': {
             name: 'fancy-lib',
             type: 'lib',
             data: {
               ...readProjectConfiguration(tree, 'fancy-lib'),
-            },
+            } as any,
           },
         },
         dependencies: {
@@ -255,16 +335,19 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           ],
         },
       };
+
       await cypressComponentConfiguration(tree, {
         project: 'fancy-lib',
         generateTests: false,
+        skipFormat: true,
       });
+
       expect(
         readProjectConfiguration(tree, 'fancy-lib').targets['component-test']
       ).toEqual({
-        executor: '@nrwl/cypress:cypress',
+        executor: '@nx/cypress:cypress',
         options: {
-          cypressConfig: 'libs/fancy-lib/cypress.config.ts',
+          cypressConfig: 'fancy-lib/cypress.config.ts',
           devServerTarget: 'fancy-app:build',
           skipServe: true,
           testingType: 'component',
@@ -273,11 +356,11 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
     });
   });
 
-  it('should work with simple components', async () => {
-    await libraryGenerator(tree, {
-      name: 'my-lib',
+  it('should setup angular specific configs', async () => {
+    await generateTestLibrary(tree, {
+      directory: 'my-lib',
+      skipFormat: true,
     });
-
     await setup(tree, {
       project: 'my-lib',
       name: 'something',
@@ -290,14 +373,14 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           type: 'app',
           data: {
             ...readProjectConfiguration(tree, 'something'),
-          },
+          } as any,
         },
         'my-lib': {
           name: 'my-lib',
           type: 'lib',
           data: {
             ...readProjectConfiguration(tree, 'my-lib'),
-          },
+          } as any,
         },
       },
       dependencies: {
@@ -310,14 +393,120 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
         ],
       },
     };
+
     await cypressComponentConfiguration(tree, {
       project: 'my-lib',
       buildTarget: 'something:build',
       generateTests: true,
+      skipFormat: true,
+    });
+
+    expect(tree.read('my-lib/cypress.config.ts', 'utf-8'))
+      .toMatchInlineSnapshot(`
+      "import { nxComponentTestingPreset } from '@nx/angular/plugins/component-testing';
+      import { defineConfig } from 'cypress';
+
+      export default defineConfig({
+        component: nxComponentTestingPreset(__filename)
+      });
+      "
+    `);
+    expect(
+      tree.read('my-lib/cypress/support/component.ts', 'utf-8')
+    ).toMatchSnapshot('component.ts');
+  });
+
+  it('should exclude Cypress-related files from tsconfig.editor.json for applications', async () => {
+    await generateTestApplication(tree, {
+      directory: 'fancy-app',
+      bundler: 'webpack',
+      skipFormat: true,
+    });
+    await componentGenerator(tree, {
+      name: 'fancy-cmp',
+      path: 'fancy-app/src/app/fancy-cmp/fancy-cmp',
+      export: true,
+      skipFormat: true,
+    });
+    projectGraph = {
+      nodes: {
+        'fancy-app': {
+          name: 'fancy-app',
+          type: 'app',
+          data: {
+            ...readProjectConfiguration(tree, 'fancy-app'),
+          } as any,
+        },
+      },
+      dependencies: {},
+    };
+
+    await cypressComponentConfiguration(tree, {
+      project: 'fancy-app',
+      generateTests: false,
+      skipFormat: true,
+    });
+
+    const tsConfig = readJson(tree, 'fancy-app/tsconfig.editor.json');
+    expect(tsConfig.exclude).toStrictEqual(
+      expect.arrayContaining([
+        'cypress/**/*',
+        'cypress.config.ts',
+        '**/*.cy.ts',
+        '**/*.cy.js',
+        '**/*.cy.tsx',
+        '**/*.cy.jsx',
+      ])
+    );
+  });
+
+  it('should work with simple components', async () => {
+    await generateTestLibrary(tree, {
+      directory: 'my-lib',
+      skipFormat: true,
+    });
+    await setup(tree, {
+      project: 'my-lib',
+      name: 'something',
+      standalone: false,
+    });
+    projectGraph = {
+      nodes: {
+        something: {
+          name: 'something',
+          type: 'app',
+          data: {
+            ...readProjectConfiguration(tree, 'something'),
+          } as any,
+        },
+        'my-lib': {
+          name: 'my-lib',
+          type: 'lib',
+          data: {
+            ...readProjectConfiguration(tree, 'my-lib'),
+          } as any,
+        },
+      },
+      dependencies: {
+        'my-lib': [
+          {
+            type: DependencyType.static,
+            source: 'my-lib',
+            target: 'something',
+          },
+        ],
+      },
+    };
+
+    await cypressComponentConfiguration(tree, {
+      project: 'my-lib',
+      buildTarget: 'something:build',
+      generateTests: true,
+      skipFormat: true,
     });
 
     const [one, two, three] = getCmpsFromTree(tree, {
-      basePath: 'libs/my-lib/src/lib',
+      basePath: 'my-lib/src/lib',
       name: 'something',
     });
     expect(one.cy).toMatchSnapshot();
@@ -326,10 +515,10 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
   });
 
   it('should work with standalone component', async () => {
-    await libraryGenerator(tree, {
-      name: 'my-lib-standalone',
+    await generateTestLibrary(tree, {
+      directory: 'my-lib-standalone',
+      skipFormat: true,
     });
-
     await setup(tree, {
       project: 'my-lib-standalone',
       name: 'something',
@@ -342,14 +531,14 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           type: 'app',
           data: {
             ...readProjectConfiguration(tree, 'something'),
-          },
+          } as any,
         },
         'my-lib-standalone': {
           name: 'my-lib-standalone',
           type: 'lib',
           data: {
             ...readProjectConfiguration(tree, 'my-lib-standalone'),
-          },
+          } as any,
         },
       },
       dependencies: {
@@ -362,6 +551,7 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
         ],
       },
     };
+
     await cypressComponentConfiguration(tree, {
       project: 'my-lib-standalone',
       buildTarget: 'something:build',
@@ -369,7 +559,7 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
     });
 
     const [one, two, three] = getCmpsFromTree(tree, {
-      basePath: 'libs/my-lib-standalone/src/lib',
+      basePath: 'my-lib-standalone/src/lib',
       name: 'something',
     });
     expect(one.cy).toMatchSnapshot();
@@ -378,16 +568,16 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
   });
 
   it('should work with complex component', async () => {
-    await libraryGenerator(tree, {
-      name: 'with-inputs-cmp',
+    await generateTestLibrary(tree, {
+      directory: 'with-inputs-cmp',
+      skipFormat: true,
     });
-
     await setup(tree, {
       project: 'with-inputs-cmp',
       name: 'something',
       standalone: false,
       withInputs: true,
-      basePath: 'libs/with-inputs-cmp/src/lib',
+      basePath: 'with-inputs-cmp/src/lib',
     });
     projectGraph = {
       nodes: {
@@ -396,14 +586,14 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           type: 'app',
           data: {
             ...readProjectConfiguration(tree, 'something'),
-          },
+          } as any,
         },
         'with-inputs-cmp': {
           name: 'with-inputs-cmp',
           type: 'lib',
           data: {
             ...readProjectConfiguration(tree, 'with-inputs-cmp'),
-          },
+          } as any,
         },
       },
       dependencies: {
@@ -416,14 +606,16 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
         ],
       },
     };
+
     await cypressComponentConfiguration(tree, {
       project: 'with-inputs-cmp',
       buildTarget: 'something:build',
       generateTests: true,
+      skipFormat: true,
     });
 
     const [one, two, three] = getCmpsFromTree(tree, {
-      basePath: 'libs/with-inputs-cmp/src/lib',
+      basePath: 'with-inputs-cmp/src/lib',
       name: 'something',
     });
     expect(one.cy).toMatchSnapshot();
@@ -432,16 +624,16 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
   });
 
   it('should work with complex standalone component', async () => {
-    await libraryGenerator(tree, {
-      name: 'with-inputs-standalone-cmp',
+    await generateTestLibrary(tree, {
+      directory: 'with-inputs-standalone-cmp',
+      skipFormat: true,
     });
-
     await setup(tree, {
       project: 'with-inputs-standalone-cmp',
       name: 'something',
       standalone: true,
       withInputs: true,
-      basePath: 'libs/with-inputs-standalone-cmp/src/lib',
+      basePath: 'with-inputs-standalone-cmp/src/lib',
     });
     projectGraph = {
       nodes: {
@@ -450,14 +642,14 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           type: 'app',
           data: {
             ...readProjectConfiguration(tree, 'something'),
-          },
+          } as any,
         },
         'with-inputs-standalone-cmp': {
           name: 'with-inputs-standalone-cmp',
           type: 'lib',
           data: {
             ...readProjectConfiguration(tree, 'with-inputs-standalone-cmp'),
-          },
+          } as any,
         },
       },
       dependencies: {
@@ -470,6 +662,7 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
         ],
       },
     };
+
     await cypressComponentConfiguration(tree, {
       project: 'with-inputs-standalone-cmp',
       buildTarget: 'something:build',
@@ -477,7 +670,7 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
     });
 
     const [one, two, three] = getCmpsFromTree(tree, {
-      basePath: 'libs/with-inputs-standalone-cmp/src/lib',
+      basePath: 'with-inputs-standalone-cmp/src/lib',
       name: 'something',
     });
     expect(one.cy).toMatchSnapshot();
@@ -486,29 +679,30 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
   });
 
   it('should work with secondary entry point libs', async () => {
-    await applicationGenerator(tree, {
-      name: 'my-cool-app',
+    await generateTestApplication(tree, {
+      directory: 'my-cool-app',
+      skipFormat: true,
     });
-    await libraryGenerator(tree, {
-      name: 'secondary',
+    await generateTestLibrary(tree, {
+      directory: 'secondary',
       buildable: true,
+      skipFormat: true,
     });
     await librarySecondaryEntryPointGenerator(tree, {
       name: 'button',
       library: 'secondary',
+      skipFormat: true,
     });
     await componentGenerator(tree, {
       name: 'fancy-button',
-      path: 'libs/secondary/src/lib/button',
-      project: 'secondary',
-      flat: true,
+      path: 'secondary/src/lib/button/fancy-button',
+      skipFormat: true,
     });
     await componentGenerator(tree, {
       name: 'standalone-fancy-button',
-      path: 'libs/secondary/src/lib/button',
-      project: 'secondary',
+      path: 'secondary/src/lib/button/standalone-fancy-button',
       standalone: true,
-      flat: true,
+      skipFormat: true,
     });
     projectGraph = {
       nodes: {
@@ -517,14 +711,14 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           type: 'app',
           data: {
             ...readProjectConfiguration(tree, 'my-cool-app'),
-          },
+          } as any,
         },
         secondary: {
           name: 'secondary',
           type: 'lib',
           data: {
             ...readProjectConfiguration(tree, 'secondary'),
-          },
+          } as any,
         },
       },
       dependencies: {},
@@ -534,38 +728,41 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
       generateTests: true,
       project: 'secondary',
       buildTarget: 'my-cool-app:build',
+      skipFormat: true,
     });
+
     expect(
       tree.read(
-        'libs/secondary/src/lib/button/fancy-button.component.cy.ts',
+        'secondary/src/lib/button/fancy-button.component.cy.ts',
         'utf-8'
       )
     ).toMatchSnapshot();
     expect(
       tree.read(
-        'libs/secondary/src/lib/button/standalone-fancy-button.component.cy.ts',
+        'secondary/src/lib/button/standalone-fancy-button.component.cy.ts',
         'utf-8'
       )
     ).toMatchSnapshot();
   });
 
   it('should not overwrite existing component test', async () => {
-    await libraryGenerator(tree, {
-      name: 'cool-lib',
+    await generateTestLibrary(tree, {
+      directory: 'cool-lib',
       flat: true,
+      skipFormat: true,
     });
     await setup(tree, { project: 'cool-lib', name: 'abc', standalone: false });
     tree.write(
-      'libs/cool-lib/src/lib/abc-one/abc-one.component.cy.ts',
-      'should not overwrite abc-one'
+      'cool-lib/src/lib/abc-one/abc-one.component.cy.ts',
+      `const msg = 'should not overwrite abc-one';`
     );
     tree.write(
-      'libs/cool-lib/src/lib/abc-two/abc-two.component.cy.ts',
-      'should not overwrite abc-two'
+      'cool-lib/src/lib/abc-two/abc-two.component.cy.ts',
+      `const msg = 'should not overwrite abc-two';`
     );
     tree.write(
-      'libs/cool-lib/src/lib/abc-three/abc-three.component.cy.ts',
-      'should not overwrite abc-three'
+      'cool-lib/src/lib/abc-three/abc-three.component.cy.ts',
+      `const msg = 'should not overwrite abc-three';`
     );
     projectGraph = {
       nodes: {
@@ -574,53 +771,60 @@ Provided Executors? @nrwl/angular:webpack-browser, @angular-devkit/build-angular
           type: 'app',
           data: {
             ...readProjectConfiguration(tree, 'abc'),
-          },
+          } as any,
         },
         'cool-lib': {
           name: 'cool-lib',
           type: 'lib',
           data: {
             ...readProjectConfiguration(tree, 'cool-lib'),
-          },
+          } as any,
         },
       },
       dependencies: {},
     };
+
     await cypressComponentConfiguration(tree, {
       project: 'cool-lib',
       buildTarget: 'abc:build',
       generateTests: true,
+      skipFormat: true,
     });
 
     const [one, two, three] = getCmpsFromTree(tree, {
       name: 'abc',
-      basePath: 'libs/cool-lib/src/lib',
+      basePath: 'cool-lib/src/lib',
     });
-
-    expect(one.cy).toEqual('should not overwrite abc-one');
-    expect(two.cy).toEqual('should not overwrite abc-two');
-    expect(three.cy).toEqual('should not overwrite abc-three');
+    expect(one.cy).toMatchInlineSnapshot(
+      `"const msg = 'should not overwrite abc-one';"`
+    );
+    expect(two.cy).toMatchInlineSnapshot(
+      `"const msg = 'should not overwrite abc-two';"`
+    );
+    expect(three.cy).toMatchInlineSnapshot(
+      `"const msg = 'should not overwrite abc-three';"`
+    );
   });
 
   // TODO: should we support this?
   it.skip('should handle multiple components per file', async () => {
-    await libraryGenerator(tree, {
-      name: 'multiple-components',
+    await generateTestLibrary(tree, {
+      directory: 'multiple-components',
       flat: true,
+      skipFormat: true,
     });
-
     await componentGenerator(tree, {
       name: 'cmp-one',
-      project: 'multiple-components',
-      flat: true,
+      path: 'multiple-components/src/lib/cmp-one',
+      skipFormat: true,
     });
     await componentGenerator(tree, {
       name: 'cmp-two',
-      project: 'multiple-components',
-      flat: true,
+      path: 'multiple-components/src/lib/cmp-two',
+      skipFormat: true,
     });
     tree.write(
-      `libs/multiple-components/src/lib/cmp-one.component.ts`,
+      `multiple-components/src/lib/cmp-one.component.ts`,
       `
 import { Component, OnInit } from '@angular/core';
 
@@ -650,7 +854,6 @@ export class CmpMultiComponent implements OnInit {
 }
 `
     );
-
     tree.write(
       '',
       `
@@ -675,12 +878,11 @@ export class MultipleComponentsModule { }
     await cypressComponentConfiguration(tree, {
       project: 'multiple-components',
       generateTests: true,
+      skipFormat: true,
     });
+
     expect(
-      tree.read(
-        'libs/multiple-components/src/lib/cmp-one.component.cy.ts',
-        'utf-8'
-      )
+      tree.read('multiple-components/src/lib/cmp-one.component.cy.ts', 'utf-8')
     ).toEqual('');
   });
 });
@@ -695,16 +897,21 @@ async function setup(
     basePath?: string;
   }
 ) {
-  await applicationGenerator(tree, {
-    name: options.name,
+  await generateTestApplication(tree, {
+    directory: options.name,
     standalone: options.standalone,
+    skipFormat: true,
   });
   for (const name of [
     `${options.name}-one`,
     `${options.name}-two`,
     `${options.name}-three`,
   ]) {
-    await componentGenerator(tree, { project: options.project, name });
+    await componentGenerator(tree, {
+      path: `${options.project}/src/lib/${name}/${name}`,
+      name,
+      skipFormat: true,
+    });
 
     if (options.withInputs) {
       const cmpPath = joinPathFragments(
@@ -712,11 +919,7 @@ async function setup(
         name,
         `${name}.component.ts`
       );
-      const oldContent = tree.read(
-        cmpPath,
-
-        'utf-8'
-      );
+      const oldContent = tree.read(cmpPath, 'utf-8');
 
       const newContent = oldContent.replace(
         'constructor()',
@@ -736,6 +939,7 @@ async function setup(
     }
   }
 }
+
 function getCmpsFromTree(
   tree: Tree,
   options: { basePath: string; name: string }

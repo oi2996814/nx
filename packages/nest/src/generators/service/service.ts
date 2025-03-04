@@ -1,5 +1,4 @@
-import type { Tree } from '@nrwl/devkit';
-import { convertNxGenerator } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
 import type {
   NestGeneratorWithLanguageOption,
   NestGeneratorWithTestOption,
@@ -14,25 +13,26 @@ import {
 export type ServiceGeneratorOptions = NestGeneratorWithLanguageOption &
   NestGeneratorWithTestOption;
 
-export function serviceGenerator(
+export async function serviceGenerator(
   tree: Tree,
   rawOptions: ServiceGeneratorOptions
 ): Promise<any> {
-  const options = normalizeServiceOptions(tree, rawOptions);
+  const options = await normalizeServiceOptions(tree, rawOptions);
 
   return runNestSchematic(tree, 'service', options);
 }
 
 export default serviceGenerator;
 
-export const serviceSchematic = convertNxGenerator(serviceGenerator);
-
-function normalizeServiceOptions(
+async function normalizeServiceOptions(
   tree: Tree,
   options: ServiceGeneratorOptions
-): NormalizedOptions {
+): Promise<NormalizedOptions> {
+  const normalizedOptions = await normalizeOptions(tree, options, {
+    suffix: 'service',
+  });
   return {
-    ...normalizeOptions(tree, options),
+    ...normalizedOptions,
     language: options.language,
     spec: unitTestRunnerToSpec(options.unitTestRunner),
   };

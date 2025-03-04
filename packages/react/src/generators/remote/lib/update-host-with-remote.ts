@@ -5,38 +5,48 @@ import {
   names,
   readProjectConfiguration,
   Tree,
-} from '@nrwl/devkit';
+} from '@nx/devkit';
 import {
-  addRemoteDefinition,
   addRemoteRoute,
   addRemoteToConfig,
 } from '../../../module-federation/ast-utils';
-import * as ts from 'typescript';
+import { ensureTypescript } from '@nx/js/src/utils/typescript/ensure-typescript';
+
+let tsModule: typeof import('typescript');
 
 export function updateHostWithRemote(
   host: Tree,
   hostName: string,
   remoteName: string
 ) {
+  if (!tsModule) {
+    tsModule = ensureTypescript();
+  }
+
   const hostConfig = readProjectConfiguration(host, hostName);
-  const moduleFederationConfigPath = joinPathFragments(
+
+  let moduleFederationConfigPath = joinPathFragments(
     hostConfig.root,
     'module-federation.config.js'
   );
-  const remoteDefsPath = joinPathFragments(
-    hostConfig.sourceRoot,
-    'remotes.d.ts'
-  );
+
+  if (!host.exists(moduleFederationConfigPath)) {
+    moduleFederationConfigPath = joinPathFragments(
+      hostConfig.root,
+      'module-federation.config.ts'
+    );
+  }
+
   const appComponentPath = findAppComponentPath(host, hostConfig.sourceRoot);
 
   if (host.exists(moduleFederationConfigPath)) {
     // find the host project path
     // Update remotes inside ${host_path}/src/remotes.d.ts
     let sourceCode = host.read(moduleFederationConfigPath).toString();
-    const source = ts.createSourceFile(
+    const source = tsModule.createSourceFile(
       moduleFederationConfigPath,
       sourceCode,
-      ts.ScriptTarget.Latest,
+      tsModule.ScriptTarget.Latest,
       true
     );
     host.write(
@@ -46,35 +56,18 @@ export function updateHostWithRemote(
   } else {
     // TODO(jack): Point to the nx.dev guide when ready.
     logger.warn(
-      `Could not find configuration at ${moduleFederationConfigPath}. Did you generate this project with "@nrwl/react:host"?`
-    );
-  }
-
-  if (host.exists(remoteDefsPath)) {
-    let sourceCode = host.read(remoteDefsPath).toString();
-    const source = ts.createSourceFile(
-      moduleFederationConfigPath,
-      sourceCode,
-      ts.ScriptTarget.Latest,
-      true
-    );
-    host.write(
-      remoteDefsPath,
-      applyChangesToString(sourceCode, addRemoteDefinition(source, remoteName))
-    );
-  } else {
-    logger.warn(
-      `Could not find remote definitions at ${remoteDefsPath}. Did you generate this project with "@nrwl/react:host"?`
+      `Could not find configuration at ${moduleFederationConfigPath}. Did you generate this project with "@nx/react:host" or "@nx/react:consumer"?`
     );
   }
 
   if (host.exists(appComponentPath)) {
     let sourceCode = host.read(appComponentPath).toString();
-    const source = ts.createSourceFile(
+    const source = tsModule.createSourceFile(
       moduleFederationConfigPath,
       sourceCode,
-      ts.ScriptTarget.Latest,
-      true
+      tsModule.ScriptTarget.Latest,
+      true,
+      tsModule.ScriptKind.TSX
     );
     host.write(
       appComponentPath,
@@ -85,13 +78,26 @@ export function updateHostWithRemote(
     );
   } else {
     logger.warn(
-      `Could not find app component at ${appComponentPath}. Did you generate this project with "@nrwl/react:host"?`
+      `Could not find app component at ${appComponentPath}. Did you generate this project with "@nx/react:host" or "@nx/react:consumer"?`
     );
   }
 }
 
 function findAppComponentPath(host: Tree, sourceRoot: string) {
-  const locations = ['app/app.tsx', 'app/App.tsx', 'app.tsx', 'App.tsx'];
+  const locations = [
+    'app/app.tsx',
+    'app/App.tsx',
+    'app/app.js',
+    'app/app.jsx',
+    'app/App.js',
+    'app/App.jsx',
+    'app.tsx',
+    'App.tsx',
+    'app.js',
+    'App.js',
+    'app.jsx',
+    'App.jsx',
+  ];
   for (const loc of locations) {
     if (host.exists(joinPathFragments(sourceRoot, loc))) {
       return joinPathFragments(sourceRoot, loc);

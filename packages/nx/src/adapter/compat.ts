@@ -1,25 +1,36 @@
-import { logger } from '../utils/logger';
-import {
-  resolveOldFormatWithInlineProjects,
-  workspaceConfigName,
-} from '../config/workspaces';
-import { workspaceRoot } from '../utils/workspace-root';
 import {
   createProjectGraphAsync,
   readProjectsConfigurationFromProjectGraph,
 } from '../project-graph/project-graph';
-import { ProjectsConfigurations } from '../config/workspace-json-project-json';
+import {
+  ProjectConfiguration,
+  ProjectsConfigurations,
+} from '../config/workspace-json-project-json';
 import { readNxJson } from '../config/configuration';
 import { NxJsonConfiguration } from '../config/nx-json';
+import { toOldFormat } from './angular-json';
 
 /* eslint-disable */
 const Module = require('module');
 const originalRequire: NodeRequire = Module.prototype.require;
 
 let patched = false;
-let loggedWriteWorkspaceWarning = false;
 
-const allowedProjectExtensions = [
+// Checks that a given const array has all keys in the union provided as T2,
+// and marks it mutable. In this case, this is useful s.t. we can ensure the
+// arrays we pass to angular for allowedProjectExtensions and allowedWorkspaceExtensions
+// contain all of the keys which we may be passing through.
+type CheckHasKeys<Arr extends readonly unknown[], Keys extends Arr[number]> = {
+  -readonly [P in keyof Arr]: Arr[P];
+};
+
+// If we pass props on a project that angular doesn't know about,
+// it throws a warning that users see. We want to pass them still,
+// so older plugins writtin in Ng Devkit can update these.
+//
+// There are some props in here (root) that angular already knows about,
+// but it doesn't hurt to have them in here as well to help static analysis.
+export const allowedProjectExtensions = [
   'tags',
   'implicitDependencies',
   'configFilePath',
@@ -27,12 +38,26 @@ const allowedProjectExtensions = [
   'generators',
   'namedInputs',
   'name',
-];
+  'files',
+  'root',
+  'sourceRoot',
+  'projectType',
+  'release',
+  'includedScripts',
+  'metadata',
+] as const;
 
-const allowedWorkspaceExtensions = [
+// If we pass props on the workspace that angular doesn't know about,
+// it throws a warning that users see. We want to pass them still,
+// so older plugins writtin in Ng Devkit can update these.
+//
+// There are some props in here (root) that angular already knows about,
+// but it doesn't hurt to have them in here as well to help static analysis.
+export const allowedWorkspaceExtensions = [
+  '$schema',
   'implicitDependencies',
   'affected',
-  'npmScope',
+  'defaultBase',
   'tasksRunnerOptions',
   'workspaceLayout',
   'plugins',
@@ -40,24 +65,33 @@ const allowedWorkspaceExtensions = [
   'files',
   'generators',
   'namedInputs',
-];
+  'extends',
+  'cli',
+  'pluginsConfig',
+  'defaultProject',
+  'installation',
+  'release',
+  'nxCloudAccessToken',
+  'nxCloudId',
+  'nxCloudUrl',
+  'nxCloudEncryptionKey',
+  'parallel',
+  'cacheDirectory',
+  'useDaemonProcess',
+  'useInferencePlugins',
+  'neverConnectToCloud',
+  'sync',
+  'useLegacyCache',
+] as const;
 
 if (!patched) {
   Module.prototype.require = function () {
     const result = originalRequire.apply(this, arguments);
     if (arguments[0].startsWith('@angular-devkit/core')) {
-      // Register `workspace.json` as a nonstandard workspace config file
       const ngCoreWorkspace = originalRequire.apply(this, [
         `@angular-devkit/core/src/workspace/core`,
       ]);
-      ngCoreWorkspace._test_addWorkspaceFile(
-        'workspace.json',
-        ngCoreWorkspace.WorkspaceFormat.JSON
-      );
-
       mockReadWorkspace(ngCoreWorkspace);
-      mockWriteWorkspace(ngCoreWorkspace);
-
       const readJsonUtils = originalRequire.apply(this, [
         `@angular-devkit/core/src/workspace/json/reader`,
       ]);
@@ -87,49 +121,14 @@ function mockReadWorkspace(
     'readWorkspace',
     (originalReadWorkspace) =>
       (path, ...rest) => {
-        const configFile = workspaceConfigName(workspaceRoot);
-        if (!configFile) {
-          path = 'workspace.json';
-        }
+        path = 'angular.json';
         return originalReadWorkspace.apply(this, [path, ...rest]);
       }
   );
 }
 
-function mockWriteWorkspace(
-  ngCoreWorkspace: typeof import('@angular-devkit/core/src/workspace/core')
-) {
-  mockMember(
-    ngCoreWorkspace,
-    'writeWorkspace',
-    (originalWriteWorkspace) =>
-      (...args) => {
-        const configFile = workspaceConfigName(workspaceRoot);
-        if (!loggedWriteWorkspaceWarning) {
-          if (configFile) {
-            logger.warn(
-              `[NX] Angular devkit called \`writeWorkspace\`, this may have had unintended consequences in ${configFile}`
-            );
-            logger.warn(`[NX] Double check ${configFile} before proceeding`);
-          } else {
-            logger.warn(
-              `[NX] Angular devkit called \`writeWorkspace\`, this may have created 'workspace.json' or 'angular.json`
-            );
-            logger.warn(
-              `[NX] Double check workspace configuration before proceeding`
-            );
-          }
-          loggedWriteWorkspaceWarning = true;
-        }
-        return originalWriteWorkspace.apply(this, args);
-      }
-  );
-}
-
 /**
- * Patch readJsonWorkspace to inline project configurations
- * as well as work in workspaces without a central workspace file.
- *
+ * Patch readJsonWorkspace to handle workspaces without a central workspace file.
  * NOTE: We hide warnings that would be logged during this process.
  */
 function mockReadJsonWorkspace(
@@ -141,8 +140,14 @@ function mockReadJsonWorkspace(
     (originalReadJsonWorkspace) => async (path, host, options) => {
       const modifiedOptions = {
         ...options,
-        allowedProjectExtensions,
-        allowedWorkspaceExtensions,
+        allowedProjectExtensions: allowedProjectExtensions as CheckHasKeys<
+          typeof allowedProjectExtensions,
+          keyof Omit<ProjectConfiguration, 'targets' | 'generators'>
+        >,
+        allowedWorkspaceExtensions: allowedWorkspaceExtensions as CheckHasKeys<
+          typeof allowedWorkspaceExtensions,
+          keyof NxJsonConfiguration
+        >,
       };
       try {
         // Attempt angular CLI default behaviour
@@ -150,9 +155,6 @@ function mockReadJsonWorkspace(
       } catch {
         // This failed. Its most likely due to a lack of a workspace definition file,
         // or other things that are different between NgCLI and Nx config files.
-        logger.debug(
-          '[NX] Angular devkit readJsonWorkspace fell back to Nx workspaces logic'
-        );
         const projectGraph = await createProjectGraphAsync();
         const nxJson = readNxJson();
 
@@ -163,11 +165,11 @@ function mockReadJsonWorkspace(
         };
 
         // Read our v1 workspace schema
-        const workspaceConfiguration = resolveOldFormatWithInlineProjects(w);
+        const workspaceConfiguration = toOldFormat(w);
         // readJsonWorkspace actually has AST parsing + more, so we
         // still need to call it rather than just return our file
         return originalReadJsonWorkspace.apply(this, [
-          'workspace.json', // path name, doesn't matter
+          'angular.json', // path name, doesn't matter
           {
             // second arg is a host, only method used is readFile
             readFile: () => JSON.stringify(workspaceConfiguration),

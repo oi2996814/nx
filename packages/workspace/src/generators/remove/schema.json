@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "NxWorkspaceRemove",
   "cli": "nx",
   "title": "Nx Remove",
@@ -7,11 +7,11 @@
   "type": "object",
   "examples": [
     {
-      "command": "nx g @nrwl/workspace:remove my-feature-lib",
+      "command": "nx g @nx/workspace:remove my-feature-lib",
       "description": "Remove `my-feature-lib` from the workspace"
     },
     {
-      "command": "nx g @nrwl/workspace:remove my-feature-lib --forceRemove",
+      "command": "nx g @nx/workspace:remove my-feature-lib --forceRemove",
       "description": "Force removal of `my-feature-lib` from the workspace"
     }
   ],
@@ -35,7 +35,8 @@
       "type": "boolean",
       "aliases": ["skip-format"],
       "description": "Skip formatting files.",
-      "default": false
+      "default": false,
+      "x-priority": "internal"
     },
     "importPath": {
       "type": "string",

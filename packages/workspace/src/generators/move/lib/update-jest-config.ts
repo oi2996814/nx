@@ -1,6 +1,7 @@
-import { ProjectConfiguration, Tree } from '@nrwl/devkit';
+import { ProjectConfiguration, Tree } from '@nx/devkit';
 import * as path from 'path';
 import { NormalizedSchema } from '../schema';
+import { findRootJestConfig } from '../../utils/jest-config';
 
 /**
  * Updates the project name and coverage folder in the jest.config.js if it exists
@@ -22,19 +23,45 @@ export function updateJestConfig(
   if (tree.exists(jestConfigPath)) {
     const oldContent = tree.read(jestConfigPath, 'utf-8');
 
-    const findName = new RegExp(`'${schema.projectName}'`, 'g');
-    const findDir = new RegExp(project.root, 'g');
+    let newContent = oldContent;
+    if (schema.projectName !== schema.newProjectName) {
+      // ensure both single and double quotes are replaced
+      const findName = new RegExp(
+        `'${schema.projectName}'|"${schema.projectName}"|\`${schema.projectName}\``,
+        'g'
+      );
+      newContent = oldContent.replace(findName, `'${schema.newProjectName}'`);
+    }
 
-    const newContent = oldContent
-      .replace(findName, `'${schema.newProjectName}'`)
-      .replace(findDir, schema.relativeToRootDestination);
+    let dirRegex = new RegExp(`\\/${project.root}\\/`, 'g');
+    if (dirRegex.test(newContent)) {
+      newContent = newContent.replace(
+        dirRegex,
+        `/${schema.relativeToRootDestination}/`
+      );
+    }
+    dirRegex = new RegExp(`\\/${project.root}['"\`]`, 'g');
+    if (dirRegex.test(newContent)) {
+      newContent = newContent.replace(
+        dirRegex,
+        `/${schema.relativeToRootDestination}'`
+      );
+    }
+    dirRegex = new RegExp(`['"\`]${project.root}\\/`, 'g');
+    if (dirRegex.test(newContent)) {
+      newContent = newContent.replace(
+        dirRegex,
+        `'${schema.relativeToRootDestination}/`
+      );
+    }
+
     tree.write(jestConfigPath, newContent);
   }
 
   // update root jest.config.ts
-  const rootJestConfigPath = '/jest.config.ts';
+  const rootJestConfigPath = findRootJestConfig(tree);
 
-  if (!tree.exists(rootJestConfigPath)) {
+  if (!rootJestConfigPath || !tree.exists(rootJestConfigPath)) {
     return;
   }
 
@@ -42,7 +69,8 @@ export function updateJestConfig(
 
   const oldRootJestConfigContent = tree.read(rootJestConfigPath, 'utf-8');
   const usingJestProjects =
-    oldRootJestConfigContent.includes('getJestProjects()');
+    oldRootJestConfigContent.includes('getJestProjects()') ||
+    oldRootJestConfigContent.includes('getJestProjectsAsync()');
 
   const newRootJestConfigContent = oldRootJestConfigContent.replace(
     findProject,

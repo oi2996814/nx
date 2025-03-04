@@ -1,7 +1,6 @@
 export interface StoriesGeneratorOptions {
   name: string;
-  cypressProject?: string;
-  generateCypressSpecs?: boolean;
+  interactionTests?: boolean;
   skipFormat?: boolean;
   ignorePaths?: string[];
 }

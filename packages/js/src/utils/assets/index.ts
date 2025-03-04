@@ -1,6 +1,6 @@
-import { AssetGlob } from '@nrwl/workspace/src/utilities/assets';
+import { AssetGlob } from './assets';
 import { CopyAssetsHandler, FileEvent } from './copy-assets-handler';
-import { ExecutorContext } from '@nrwl/devkit';
+import { ExecutorContext, isDaemonEnabled, output } from '@nx/devkit';
 
 export interface CopyAssetsOptions {
   outputPath: string;
@@ -23,25 +23,34 @@ export async function copyAssets(
   context: ExecutorContext
 ): Promise<CopyAssetsResult> {
   const assetHandler = new CopyAssetsHandler({
-    projectDir: context.workspace.projects[context.projectName].root,
+    projectDir:
+      context.projectsConfigurations.projects[context.projectName].root,
     rootDir: context.root,
     outputDir: options.outputPath,
     assets: options.assets,
     callback:
       typeof options?.watch === 'object' ? options.watch.onCopy : undefined,
   });
-  if (options.watch) {
-    const dispose = await assetHandler.watchAndProcessOnAssetChange();
-    return {
-      success: true,
-      stop: dispose,
-    };
-  } else {
-    try {
-      await assetHandler.processAllAssetsOnce();
-    } catch {
-      return { success: false };
-    }
-    return { success: true };
+  const result: CopyAssetsResult = {
+    success: true,
+  };
+
+  if (!isDaemonEnabled() && options.watch) {
+    output.warn({
+      title:
+        'Nx Daemon is not enabled. Assets will not be updated when they are changed.',
+    });
   }
+
+  if (isDaemonEnabled() && options.watch) {
+    result.stop = await assetHandler.watchAndProcessOnAssetChange();
+  }
+
+  try {
+    await assetHandler.processAllAssetsOnce();
+  } catch {
+    result.success = false;
+  }
+
+  return result;
 }

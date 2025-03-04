@@ -1,3 +1,8 @@
+---
+title: 'workspace.json'
+description: 'Learn about the deprecation of workspace.json in Nx and how to migrate to project.json files for better project configuration management.'
+---
+
 # workspace.json
 
 Nx used to have a `workspace.json` file at the root of the repo that at various points performed these functions:
@@ -5,7 +10,7 @@ Nx used to have a `workspace.json` file at the root of the repo that at various 
 1. Identified the locations of all project in the repo
 2. Contained the target configuration for all projects
 
-Identifying the locations of projects is now done automatically through project inference. You can even customize how projects are inferred with a [project inference plugin](/recipe/project-inference-plugins).
+Identifying the locations of projects is now done automatically through project inference. You can even customize how projects are inferred with a [project inference plugin](/extending-nx/recipes/project-graph-plugins).
 
 The target configuration for each project is now stored in individual `project.json` files or `package.json` files.
 
@@ -13,11 +18,11 @@ The target configuration for each project is now stored in individual `project.j
 
 To remove `workspace.json` in favor of `project.json` files, run:
 
-```bash
-nx g @nrwl/workspace:convert-to-nx-project --all
+```shell
+nx g @nx/workspace:fix-configuration
 ```
 
-See [convert-to-nx-project](/packages/workspace/generators/convert-to-nx-project) for more options.
+See [fix-configuration](/nx-api/workspace/generators/fix-configuration) for more options.
 
 After this command, `workspace.json` should look like this:
 

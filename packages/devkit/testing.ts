@@ -1,5 +1,2 @@
-export {
-  createTreeWithEmptyWorkspace,
-  createTreeWithEmptyV1Workspace,
-} from 'nx/src/generators/testing-utils/create-tree-with-empty-workspace';
-export { createTree } from 'nx/src/generators/testing-utils/create-tree';
+// eslint-disable-next-line @typescript-eslint/no-restricted-imports
+export * from 'nx/src/devkit-testing-exports';

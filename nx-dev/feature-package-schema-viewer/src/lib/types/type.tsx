@@ -3,12 +3,12 @@ import {
   getSchemaFromResult,
   getTitleForSchema,
   Lookup,
-} from '@nrwl/nx-dev/data-access-packages';
+} from '@nx/nx-dev/data-access-packages';
 import {
   JsonSchema,
   JsonSchema1,
   SimpleTypes,
-} from '@nrwl/nx-dev/models-package';
+} from '@nx/nx-dev/models-package';
 import React from 'react';
 import { joinTypes } from './join-types';
 import {
@@ -60,8 +60,9 @@ function hasPatternProperties(s: JsonSchema1): boolean {
 }
 
 function hasAdditionalProperties(s: JsonSchema1): boolean {
-  return !(
-    typeof s.additionalProperties === 'boolean' && !s.additionalProperties
+  return (
+    typeof s.additionalProperties === 'boolean' ||
+    typeof s.additionalProperties === 'object'
   );
 }
 

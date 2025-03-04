@@ -13,22 +13,24 @@ export function generateEntryPoints(appConfig: {
     const entryPoints = normalizeExtraEntryPoints(
       extraEntryPoints,
       defaultBundleName
-    )
-      .filter((entry) => entry.inject)
-      .map((entry) => entry.bundleName);
+    ).map((entry) => entry.bundleName);
 
     // remove duplicates
     return [...new Set(entryPoints)];
   };
 
+  const styleEntryPoints = appConfig.styles.filter(
+    (style) => !(typeof style !== 'string' && !style.inject)
+  );
+  const scriptEntryPoints = appConfig.scripts.filter(
+    (script) => !(typeof script !== 'string' && !script.inject)
+  );
   const entryPoints = [
-    'polyfills-nomodule-es5',
     'runtime',
-    'polyfills-es5',
     'polyfills',
     'sw-register',
-    ...extraEntryPoints(appConfig.styles, 'styles'),
-    ...extraEntryPoints(appConfig.scripts, 'scripts'),
+    ...extraEntryPoints(styleEntryPoints, 'styles'),
+    ...extraEntryPoints(scriptEntryPoints, 'scripts'),
     'vendor',
     'main',
   ];

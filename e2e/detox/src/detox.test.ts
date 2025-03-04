@@ -1,63 +1,75 @@
 import {
-  checkFilesExist,
-  isOSX,
-  newProject,
   runCLI,
-  runCLIAsync,
-  uniq,
-  killPorts,
   cleanupProject,
-} from '@nrwl/e2e/utils';
+  newProject,
+  uniq,
+  readJson,
+  updateJson,
+} from 'e2e/utils';
 
-describe('Detox', () => {
-  const appName = uniq('myapp');
+describe('@nx/detox', () => {
+  let project: string;
+  let reactNativeAppName: string;
+  let expoAppName: string;
 
   beforeAll(() => {
-    newProject();
+    project = newProject();
+    reactNativeAppName = uniq('appTest');
+    expoAppName = uniq('expoAppTest');
+    runCLI(
+      `generate @nx/react-native:app ${reactNativeAppName} --e2eTestRunner=detox --install=false --interactive=false`
+    );
+    runCLI(
+      `generate @nx/expo:app ${expoAppName} --e2eTestRunner=detox --interactive=false`
+    );
+    updateAppDetoxJson(reactNativeAppName);
+    updateAppDetoxJson(expoAppName);
   });
 
   afterAll(() => cleanupProject());
 
-  it('should create files and run lint command for react-native apps', async () => {
-    runCLI(
-      `generate @nrwl/react-native:app ${appName} --e2eTestRunner=detox --linter=eslint --install=false`
+  it('nx.json should contain plugin configuration', () => {
+    const nxJson = readJson('nx.json');
+    const detoxPlugin = nxJson.plugins.find(
+      (plugin) => plugin.plugin === '@nx/detox/plugin'
     );
-    checkFilesExist(`apps/${appName}-e2e/.detoxrc.json`);
-    checkFilesExist(`apps/${appName}-e2e/tsconfig.json`);
-    checkFilesExist(`apps/${appName}-e2e/tsconfig.e2e.json`);
-    checkFilesExist(`apps/${appName}-e2e/test-setup.ts`);
-    checkFilesExist(`apps/${appName}-e2e/src/app.spec.ts`);
-
-    const lintResults = await runCLIAsync(`lint ${appName}-e2e`);
-    expect(lintResults.combinedOutput).toContain('All files pass linting');
+    expect(detoxPlugin).toBeDefined();
+    expect(detoxPlugin.options).toBeDefined();
+    expect(detoxPlugin.options.buildTargetName).toEqual('build');
+    expect(detoxPlugin.options.testTargetName).toEqual('test');
+    expect(detoxPlugin.options.startTargetName).toEqual('start');
   });
 
-  it('should create files and run lint command for expo apps', async () => {
-    const expoAppName = uniq('myapp');
-    runCLI(
-      `generate @nrwl/expo:app ${expoAppName} --e2eTestRunner=detox --linter=eslint`
+  it('should build the app', async () => {
+    const result = runCLI(
+      `build ${reactNativeAppName}-e2e -- --configuration e2e.sim.debug`
     );
-    checkFilesExist(`apps/${expoAppName}-e2e/.detoxrc.json`);
-    checkFilesExist(`apps/${expoAppName}-e2e/tsconfig.json`);
-    checkFilesExist(`apps/${expoAppName}-e2e/tsconfig.e2e.json`);
-    checkFilesExist(`apps/${expoAppName}-e2e/test-setup.ts`);
-    checkFilesExist(`apps/${expoAppName}-e2e/src/app.spec.ts`);
+    expect(result).toContain(`building ${reactNativeAppName}`);
+    expect(result).toContain(
+      `Successfully ran target build for project ${reactNativeAppName}`
+    );
 
-    const lintResults = await runCLIAsync(`lint ${expoAppName}-e2e`);
-    expect(lintResults.combinedOutput).toContain('All files pass linting');
-  });
-
-  describe('React Native Detox MACOS-Tests', () => {
-    if (isOSX()) {
-      it('should test ios MACOS-Tests', async () => {
-        expect(
-          runCLI(
-            `test-ios ${appName}-e2e --prod --debugSynchronization=true --loglevel=trace`
-          )
-        ).toContain('Successfully ran target test-ios');
-
-        await killPorts(8081); // kill the port for the serve command
-      }, 3000000);
-    }
-  });
+    const expoResult = runCLI(
+      `build ${expoAppName}-e2e -- --configuration e2e.sim.debug`
+    );
+    expect(expoResult).toContain(`building ${expoAppName}`);
+    expect(expoResult).toContain(
+      `Successfully ran target build for project ${expoAppName}`
+    );
+  }, 200_000);
 });
+
+function updateAppDetoxJson(appName: string) {
+  updateJson(`${appName}-e2e/.detoxrc.json`, (json) => {
+    json.apps['e2e.debug'] = {
+      type: 'ios.app',
+      build: `echo "building ${appName}"`,
+      binaryPath: 'dist',
+    };
+    json.configurations['e2e.sim.debug'] = {
+      device: 'simulator',
+      app: 'e2e.debug',
+    };
+    return json;
+  });
+}

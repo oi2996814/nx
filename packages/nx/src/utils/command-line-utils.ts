@@ -1,112 +1,23 @@
 import * as yargsParser from 'yargs-parser';
-import * as yargs from 'yargs';
+import type { Arguments } from 'yargs';
 import { TEN_MEGABYTES } from '../project-graph/file-utils';
 import { output } from './output';
 import { NxJsonConfiguration } from '../config/nx-json';
 import { execSync } from 'child_process';
-import { serializeOverridesIntoCommandLine } from './serialize-overrides-into-command-line';
 import { ProjectGraph } from '../config/project-graph';
-
-export function names(name: string): {
-  name: string;
-  className: string;
-  propertyName: string;
-  constantName: string;
-  fileName: string;
-} {
-  return {
-    name,
-    className: toClassName(name),
-    propertyName: toPropertyName(name),
-    constantName: toConstantName(name),
-    fileName: toFileName(name),
-  };
-}
-
-/**
- * Hyphenated to UpperCamelCase
- */
-function toClassName(str: string): string {
-  return toCapitalCase(toPropertyName(str));
-}
-
-/**
- * Hyphenated to lowerCamelCase
- */
-function toPropertyName(s: string): string {
-  return s
-    .replace(/([^a-zA-Z0-9])+(.)?/g, (_, __, chr) =>
-      chr ? chr.toUpperCase() : ''
-    )
-    .replace(/[^a-zA-Z\d]/g, '')
-    .replace(/^([A-Z])/, (m) => m.toLowerCase());
-}
-
-/**
- * Hyphenated to CONSTANT_CASE
- */
-function toConstantName(s: string): string {
-  return s.replace(/([^a-zA-Z0-9])/g, '_').toUpperCase();
-}
-
-/**
- * Upper camelCase to lowercase, hyphenated
- */
-function toFileName(s: string): string {
-  return s
-    .replace(/([a-z\d])([A-Z])/g, '$1_$2')
-    .toLowerCase()
-    .replace(/[ _]/g, '-');
-}
-
-/**
- * Capitalizes the first letter of a string
- */
-function toCapitalCase(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
-
-const runOne: string[] = [
-  'target',
-  'configuration',
-  'prod',
-  'runner',
-  'parallel',
-  'maxParallel',
-  'exclude',
-  'onlyFailed',
-  'help',
-  'skipNxCache',
-  'outputStyle',
-  'nxBail',
-  'nxIgnoreCycles',
-  'verbose',
-  'cloud',
-  'dte',
-];
-
-const runMany: string[] = [...runOne, 'projects', 'all'];
-
-const runAffected: string[] = [
-  ...runOne,
-  'untracked',
-  'uncommitted',
-  'all',
-  'base',
-  'head',
-  'files',
-  'plain',
-  'select',
-  'type',
-];
+import { workspaceRoot } from './workspace-root';
+import { readParallelFromArgsAndEnv } from '../command-line/yargs-utils/shared-options';
 
 export interface RawNxArgs extends NxArgs {
   prod?: boolean;
 }
 
 export interface NxArgs {
-  target?: string;
+  targets?: string[];
   configuration?: string;
+  /**
+   * @deprecated Custom task runners will be replaced by a new API starting with Nx 21. More info: https://nx.dev/deprecated/custom-tasks-runner
+   */
   runner?: string;
   parallel?: number;
   untracked?: boolean;
@@ -116,113 +27,92 @@ export interface NxArgs {
   head?: string;
   exclude?: string[];
   files?: string[];
-  onlyFailed?: boolean;
   verbose?: boolean;
   help?: boolean;
   version?: boolean;
   plain?: boolean;
   projects?: string[];
   select?: string;
+  graph?: string | boolean;
   skipNxCache?: boolean;
+  skipRemoteCache?: boolean;
   outputStyle?: string;
   nxBail?: boolean;
   nxIgnoreCycles?: boolean;
   type?: string;
+  batch?: boolean;
+  excludeTaskDependencies?: boolean;
+  skipSync?: boolean;
+  sortRootTsconfigPaths?: boolean;
 }
 
-const ignoreArgs = ['$0', '_'];
+export function createOverrides(__overrides_unparsed__: string[] = []) {
+  let overrides: Record<string, any> =
+    yargsParser(__overrides_unparsed__, {
+      configuration: {
+        'camel-case-expansion': false,
+        'dot-notation': true,
+      },
+    }) || {};
+
+  if (!overrides._ || overrides._.length === 0) {
+    delete overrides._;
+  }
+
+  overrides.__overrides_unparsed__ = __overrides_unparsed__;
+  return overrides;
+}
+
+export function getBaseRef(nxJson: NxJsonConfiguration) {
+  return nxJson.defaultBase ?? nxJson.affected?.defaultBase ?? 'main';
+}
 
 export function splitArgsIntoNxArgsAndOverrides(
   args: { [k: string]: any },
   mode: 'run-one' | 'run-many' | 'affected' | 'print-affected',
   options = { printWarnings: true },
   nxJson: NxJsonConfiguration
-): { nxArgs: NxArgs; overrides: yargs.Arguments } {
-  if (!args.__overrides__ && args._) {
+): {
+  nxArgs: NxArgs;
+  overrides: Arguments & { __overrides_unparsed__: string[] };
+} {
+  // this is to lerna case when this function is invoked imperatively
+  if (args['target'] && !args['targets']) {
+    args['targets'] = [args['target']];
+  }
+  delete args['target'];
+  delete args['t'];
+
+  if (!args.__overrides_unparsed__ && args._) {
     // required for backwards compatibility
-    args.__overrides__ = args._;
+    args.__overrides_unparsed__ = args._;
+    delete args._;
+  }
+  // This handles the way Lerna passes in overrides
+  if (!args.__overrides_unparsed__ && args.__overrides__) {
+    // required for backwards compatibility
+    args.__overrides_unparsed__ = args.__overrides__;
     delete args._;
   }
 
-  const nxSpecific =
-    mode === 'run-one' ? runOne : mode === 'run-many' ? runMany : runAffected;
+  const nxArgs: RawNxArgs = args;
 
-  let explicitOverrides;
-  if (args.__overrides__) {
-    explicitOverrides = yargsParser(args.__overrides__ as string[], {
-      configuration: {
-        'camel-case-expansion': false,
-        'dot-notation': false,
-      },
-    });
-    if (!explicitOverrides._ || explicitOverrides._.length === 0) {
-      delete explicitOverrides._;
-    }
-  }
-  const overridesFromMainArgs = {} as any;
-  if (
-    args['__positional_overrides__'] &&
-    args['__positional_overrides__'].length > 0
-  ) {
-    overridesFromMainArgs['_'] = args['__positional_overrides__'];
-  }
-  const nxArgs: RawNxArgs = {};
-  Object.entries(args).forEach(([key, value]) => {
-    const camelCased = names(key).propertyName;
-    if (nxSpecific.includes(camelCased) || camelCased.startsWith('nx')) {
-      if (value !== undefined) nxArgs[camelCased] = value;
-    } else if (
-      !ignoreArgs.includes(key) &&
-      key !== '__positional_overrides__' &&
-      key !== '__overrides__'
-    ) {
-      overridesFromMainArgs[key] = value;
-    }
-  });
-
-  let overrides;
-  if (explicitOverrides) {
-    overrides = explicitOverrides;
-    overrides['__overrides_unparsed__'] = args.__overrides__;
-    if (
-      Object.keys(overridesFromMainArgs).length > 0 &&
-      options.printWarnings
-    ) {
-      const s = Object.keys(overridesFromMainArgs).join(', ');
-      output.warn({
-        title: `Nx didn't recognize the following args: ${s}`,
-        bodyLines: [
-          "When using '--' all executor args have to be defined after '--'.",
-        ],
-      });
-    }
-  } else {
-    overrides = overridesFromMainArgs;
-    overrides['__overrides_unparsed__'] = serializeOverridesIntoCommandLine(
-      overridesFromMainArgs
-    );
-  }
+  let overrides = createOverrides(args.__overrides_unparsed__);
+  delete (nxArgs as any).$0;
+  delete (nxArgs as any).__overrides_unparsed__;
 
   if (mode === 'run-many') {
-    if (!nxArgs.projects) {
-      nxArgs.projects = [];
-    } else {
-      nxArgs.projects = (args.projects as string)
-        .split(',')
-        .map((p: string) => p.trim());
+    const args = nxArgs as any;
+    if (!args.projects) {
+      args.projects = [];
+    } else if (typeof args.projects === 'string') {
+      args.projects = args.projects.split(',');
     }
   }
 
   if (nxArgs.prod) {
     delete nxArgs.prod;
     nxArgs.configuration = 'production';
-  }
-
-  // TODO(v15): onlyFailed should not be an option
-  if (options.printWarnings && nxArgs.onlyFailed) {
-    output.warn({
-      title: `--onlyFailed is deprecated. All tasks will be run.`,
-    });
   }
 
   if (mode === 'affected') {
@@ -235,28 +125,13 @@ export function splitArgsIntoNxArgsAndOverrides(
           )} is not meant to be used for any sizable project or to be used in CI.`,
           '',
           `${output.dim(
-            'Learn more about checking only what is affected: https://nx.dev/cli/affected'
+            'Learn more about checking only what is affected: https://nx.dev/nx/affected'
           )}`,
         ],
       });
     }
 
-    if (
-      !nxArgs.files &&
-      !nxArgs.uncommitted &&
-      !nxArgs.untracked &&
-      !nxArgs.base &&
-      !nxArgs.head &&
-      !nxArgs.all &&
-      overridesFromMainArgs._ &&
-      overridesFromMainArgs._.length >= 2
-    ) {
-      throw new Error(
-        `Nx no longer supports using positional arguments for base and head. Please use --base and --head instead.`
-      );
-    }
-
-    // Allow setting base and head via environment variables (lower priority then direct command arguments)
+    // Allow setting base and head via environment variables (lower priority than direct command arguments)
     if (!nxArgs.base && process.env.NX_BASE) {
       nxArgs.base = process.env.NX_BASE;
       if (options.printWarnings) {
@@ -279,7 +154,7 @@ export function splitArgsIntoNxArgsAndOverrides(
     }
 
     if (!nxArgs.base) {
-      nxArgs.base = nxJson.affected?.defaultBase || 'main';
+      nxArgs.base = getBaseRef(nxJson);
 
       // No user-provided arguments to set the affected criteria, so inform the user of the defaults being used
       if (
@@ -297,27 +172,75 @@ export function splitArgsIntoNxArgsAndOverrides(
         });
       }
     }
+
+    if (nxArgs.base) {
+      nxArgs.base = getMergeBase(nxArgs.base, nxArgs.head);
+    }
+  }
+
+  if (typeof args.exclude === 'string') {
+    nxArgs.exclude = args.exclude.split(',');
   }
 
   if (!nxArgs.skipNxCache) {
-    nxArgs.skipNxCache = process.env.NX_SKIP_NX_CACHE === 'true';
+    nxArgs.skipNxCache =
+      process.env.NX_SKIP_NX_CACHE === 'true' ||
+      process.env.NX_DISABLE_NX_CACHE === 'true';
   }
 
-  if (args['parallel'] === 'false' || args['parallel'] === false) {
-    nxArgs['parallel'] = 1;
-  } else if (
-    args['parallel'] === 'true' ||
-    args['parallel'] === true ||
-    args['parallel'] === ''
-  ) {
-    nxArgs['parallel'] = Number(
-      nxArgs['maxParallel'] || nxArgs['max-parallel'] || 3
-    );
-  } else if (args['parallel'] !== undefined) {
-    nxArgs['parallel'] = Number(args['parallel']);
+  if (!nxArgs.skipRemoteCache) {
+    nxArgs.skipRemoteCache =
+      process.env.NX_DISABLE_REMOTE_CACHE === 'true' ||
+      process.env.NX_SKIP_REMOTE_CACHE === 'true';
   }
+
+  normalizeNxArgsRunner(nxArgs, nxJson, options);
+
+  nxArgs['parallel'] = readParallelFromArgsAndEnv(args);
 
   return { nxArgs, overrides } as any;
+}
+
+function normalizeNxArgsRunner(
+  nxArgs: RawNxArgs,
+  nxJson: NxJsonConfiguration<string[] | '*'>,
+  options: { printWarnings: boolean }
+) {
+  if (!nxArgs.runner) {
+    const envKey = 'NX_TASKS_RUNNER';
+    const runner = process.env[envKey];
+    if (runner) {
+      const runnerExists = nxJson.tasksRunnerOptions?.[runner];
+      if (options.printWarnings) {
+        if (runnerExists) {
+          output.note({
+            title: `No explicit --runner argument provided, but found environment variable ${envKey} so using its value: ${output.bold(
+              `${runner}`
+            )}`,
+          });
+        } else if (
+          nxArgs.verbose ||
+          process.env.NX_VERBOSE_LOGGING === 'true'
+        ) {
+          output.warn({
+            title: `Could not find ${output.bold(
+              `${runner}`
+            )} within \`nx.json\` tasksRunnerOptions.`,
+            bodyLines: [
+              `${output.bold(`${runner}`)} was set by ${envKey}`,
+              ``,
+              `To suppress this message, either:`,
+              `  - provide a valid task runner with --runner`,
+              `  - ensure NX_TASKS_RUNNER matches a task runner defined in nx.json`,
+            ],
+          });
+        }
+      }
+      if (runnerExists) {
+        nxArgs.runner = runner;
+      }
+    }
+  }
 }
 
 export function parseFiles(options: NxArgs): { files: string[] } {
@@ -353,37 +276,51 @@ export function parseFiles(options: NxArgs): { files: string[] } {
 }
 
 function getUncommittedFiles(): string[] {
-  return parseGitOutput(`git diff --name-only --relative HEAD .`);
+  return parseGitOutput(`git diff --name-only --no-renames --relative HEAD .`);
 }
-
-``;
 
 function getUntrackedFiles(): string[] {
   return parseGitOutput(`git ls-files --others --exclude-standard`);
 }
 
-function getFilesUsingBaseAndHead(base: string, head: string): string[] {
-  let mergeBase: string;
+function getMergeBase(base: string, head: string = 'HEAD') {
   try {
-    mergeBase = execSync(`git merge-base "${base}" "${head}"`, {
+    return execSync(`git merge-base "${base}" "${head}"`, {
       maxBuffer: TEN_MEGABYTES,
+      cwd: workspaceRoot,
+      stdio: 'pipe',
+      windowsHide: false,
     })
       .toString()
       .trim();
   } catch {
-    mergeBase = execSync(`git merge-base --fork-point "${base}" "${head}"`, {
-      maxBuffer: TEN_MEGABYTES,
-    })
-      .toString()
-      .trim();
+    try {
+      return execSync(`git merge-base --fork-point "${base}" "${head}"`, {
+        maxBuffer: TEN_MEGABYTES,
+        cwd: workspaceRoot,
+        stdio: 'pipe',
+        windowsHide: false,
+      })
+        .toString()
+        .trim();
+    } catch {
+      return base;
+    }
   }
+}
+
+function getFilesUsingBaseAndHead(base: string, head: string): string[] {
   return parseGitOutput(
-    `git diff --name-only --relative "${mergeBase}" "${head}"`
+    `git diff --name-only --no-renames --relative "${base}" "${head}"`
   );
 }
 
 function parseGitOutput(command: string): string[] {
-  return execSync(command, { maxBuffer: TEN_MEGABYTES })
+  return execSync(command, {
+    maxBuffer: TEN_MEGABYTES,
+    cwd: workspaceRoot,
+    windowsHide: false,
+  })
     .toString('utf-8')
     .split('\n')
     .map((a) => a.trim())
@@ -395,4 +332,10 @@ export function getProjectRoots(
   { nodes }: ProjectGraph
 ): string[] {
   return projectNames.map((name) => nodes[name].data.root);
+}
+
+export function readGraphFileFromGraphArg({ graph }: Pick<NxArgs, 'graph'>) {
+  return typeof graph === 'string' && graph !== 'true' && graph !== ''
+    ? graph
+    : undefined;
 }

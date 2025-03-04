@@ -1,16 +1,17 @@
-import type { Tree } from '@nrwl/devkit';
-import { joinPathFragments, names } from '@nrwl/devkit';
-import { addGlobal } from '@nrwl/workspace/src/utilities/ast-utils';
-import { dirname } from 'path';
-import { createSourceFile, ScriptTarget } from 'typescript';
-import type { NgRxGeneratorOptions } from '../schema';
+import type { Tree } from '@nx/devkit';
+import { joinPathFragments, names } from '@nx/devkit';
+import { ensureTypescript } from '@nx/js/src/utils/typescript/ensure-typescript';
+import { addGlobal } from '@nx/js';
+import type { NormalizedNgRxGeneratorOptions } from './normalize-options';
+
+let tsModule: typeof import('typescript');
 
 /**
  * Add ngrx feature exports to the public barrel in the feature library
  */
 export function addExportsToBarrel(
   tree: Tree,
-  options: NgRxGeneratorOptions
+  options: NormalizedNgRxGeneratorOptions
 ): void {
   // Don't update the public barrel for the root state, only for feature states
   if (options.root) {
@@ -18,7 +19,7 @@ export function addExportsToBarrel(
   }
 
   const indexFilePath = joinPathFragments(
-    dirname(options.module),
+    options.parentDirectory,
     '..',
     'index.ts'
   );
@@ -26,11 +27,14 @@ export function addExportsToBarrel(
     return;
   }
 
+  if (!tsModule) {
+    tsModule = ensureTypescript();
+  }
   const indexSourceText = tree.read(indexFilePath, 'utf-8');
-  let sourceFile = createSourceFile(
+  let sourceFile = tsModule.createSourceFile(
     indexFilePath,
     indexSourceText,
-    ScriptTarget.Latest,
+    tsModule.ScriptTarget.Latest,
     true
   );
 

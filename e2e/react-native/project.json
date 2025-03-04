@@ -1,34 +1,15 @@
 {
+  "name": "e2e-react-native",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "e2e/react-native",
   "projectType": "application",
+  "implicitDependencies": ["react-native"],
   "targets": {
-    "e2e": {
-      "executor": "nx:run-commands",
-      "options": {
-        "commands": [
-          {
-            "command": "yarn e2e-start-local-registry"
-          },
-          {
-            "command": "yarn e2e-build-package-publish"
-          },
-          {
-            "command": "nx run-e2e-tests e2e-react-native"
-          }
-        ],
-        "parallel": false
-      }
+    "e2e-macos-ci--src/react-native-legacy.test.ts": {
+      "inputs": ["e2eInputs", "^production"]
     },
-    "run-e2e-tests": {
-      "executor": "@nrwl/jest:jest",
-      "options": {
-        "jestConfig": "e2e/react-native/jest.config.ts",
-        "passWithNoTests": true,
-        "runInBand": true
-      },
-      "outputs": ["coverage/e2e/react-native"]
+    "e2e-macos-ci--src/react-native.test.ts": {
+      "inputs": ["e2eInputs", "^production"]
     }
-  },
-  "implicitDependencies": ["react-native"]
+  }
 }

@@ -1,150 +1,95 @@
 {
+  "name": "graph-client",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "graph/client/src",
   "projectType": "application",
   "targets": {
-    "build-base": {
-      "executor": "@nrwl/webpack:webpack",
+    "generate-dev-environment-js": {
+      "executor": "nx:run-commands",
       "options": {
-        "maxWorkers": 8,
-        "outputPath": "build/apps/graph",
-        "index": "graph/client/src/index.html",
-        "main": "graph/client/src/main.tsx",
-        "polyfills": "graph/client/src/polyfills.ts",
-        "tsConfig": "graph/client/tsconfig.app.json",
-        "styles": ["graph/client/src/styles.scss"],
-        "scripts": [],
-        "assets": [],
-        "webpackConfig": "graph/client/webpack.config.js",
-        "optimization": false,
-        "outputHashing": "none",
-        "sourceMap": true,
-        "extractCss": true,
-        "namedChunks": false,
-        "extractLicenses": false,
-        "vendorChunk": true,
-        "budgets": [
-          {
-            "type": "initial",
-            "maximumWarning": "2mb",
-            "maximumError": "5mb"
-          }
+        "commands": [
+          "ts-node -P ./scripts/tsconfig.scripts.json ./scripts/generate-graph-environment.ts"
         ]
-      },
+      }
+    },
+    "generate-graph-base": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "ts-node -P ./scripts/tsconfig.scripts.json ./scripts/generate-graph.ts"
+        ]
+      }
+    },
+    "generate-graph": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "npx nx run graph-client:generate-graph-base",
+          "npx nx run graph-client:generate-dev-environment-js"
+        ],
+        "parallel": false
+      }
+    },
+    "build-client": {
+      "dependsOn": ["nx:build-native"],
       "configurations": {
-        "dev": {
-          "assets": [
-            "graph/client/src/favicon.ico",
-            "graph/client/src/assets/graphs/",
-            {
-              "input": "graph/client/src/assets/dev",
-              "output": "/",
-              "glob": "environment.js"
-            }
-          ]
-        },
-        "nx-console": {
-          "assets": [
-            "graph/client/src/favicon.ico",
-            {
-              "input": "graph/client/src/assets/graphs",
-              "output": "/assets/graphs",
-              "glob": "nx-examples.json"
-            },
-            {
-              "input": "graph/client/src/assets/nx-console",
-              "output": "/",
-              "glob": "environment.js"
-            }
-          ]
-        },
-        "release": {
-          "assets": [
-            "graph/client/src/favicon.ico",
-            {
-              "input": "graph/client/src/assets/graphs",
-              "output": "/assets/graphs",
-              "glob": "nx-examples.json"
-            },
-            {
-              "input": "graph/client/src/assets/release",
-              "output": "/",
-              "glob": "environment.js"
-            }
-          ],
-          "optimization": true,
-          "sourceMap": false,
-          "extractCss": true,
-          "namedChunks": false,
-          "extractLicenses": true,
-          "vendorChunk": false,
-          "budgets": [
-            {
-              "type": "initial",
-              "maximumWarning": "2mb",
-              "maximumError": "5mb"
-            }
-          ]
-        },
-        "watch": {
-          "assets": [
-            "graph/client/src/favicon.ico",
-            {
-              "input": "graph/client/src/assets/watch",
-              "output": "/",
-              "glob": "environment.js"
-            }
-          ]
-        }
+        "dev": {},
+        "nx-console": {},
+        "release": {},
+        "watch": {},
+        "release-static": {},
+        "dev-e2e": {}
       },
-      "defaultConfiguration": "release",
-      "outputs": ["{options.outputPath}"]
+      "defaultConfiguration": "release"
+    },
+    "serve-base": {
+      "configurations": {
+        "dev": {},
+        "nx-console": {},
+        "release": {},
+        "watch": {},
+        "release-static": {},
+        "dev-e2e": {}
+      },
+      "defaultConfiguration": "dev"
     },
     "serve": {
-      "executor": "@nrwl/webpack:dev-server",
+      "executor": "nx:run-commands",
       "configurations": {
         "dev": {
-          "buildTarget": "graph-client:build-base:dev",
-          "port": 4201
+          "commands": [
+            "npx nx run graph-client:generate-dev-environment-js",
+            "npx nx serve-base graph-client"
+          ],
+          "parallel": false
         },
-        "nx-console": {
-          "buildTarget": "graph-client:build-base:nx-console",
-          "port": 4202
+        "dev-e2e": {
+          "commands": ["npx nx serve-base graph-client --configuration dev-e2e"]
         },
         "release": {
-          "buildTarget": "graph-client:build-base:release",
-          "port": 4203
+          "commands": ["npx nx serve-base graph-client --configuration release"]
+        },
+        "release-static": {
+          "commands": [
+            "npx nx serve-base graph-client --configuration release-static"
+          ]
         },
         "watch": {
-          "buildTarget": "graph-client:build-base:watch",
-          "port": 4204
+          "commands": ["npx nx serve-base graph-client --configuration watch"]
+        },
+        "nx-console": {
+          "commands": [
+            "npx nx serve-base graph-client --configuration nx-console"
+          ]
         }
       },
       "defaultConfiguration": "dev"
     },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "outputs": ["{options.outputFile}"],
-      "options": {
-        "lintFilePatterns": ["graph/client/**/*.{ts,tsx,js,jsx}"]
-      }
-    },
-    "test": {
-      "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/graph/client"],
-      "options": {
-        "jestConfig": "graph/client/jest.config.ts",
-        "passWithNoTests": true
-      }
-    },
     "storybook": {
-      "executor": "@nrwl/storybook:storybook",
+      "executor": "@nx/storybook:storybook",
       "options": {
-        "uiFramework": "@storybook/react",
         "port": 4400,
-        "config": {
-          "configFolder": "graph/client/.storybook"
-        }
+        "configDir": "graph/client/.storybook"
       },
       "configurations": {
         "ci": {
@@ -153,14 +98,11 @@
       }
     },
     "build-storybook": {
-      "executor": "@nrwl/storybook:build",
-      "outputs": ["{options.outputPath}"],
+      "executor": "@nx/storybook:build",
+      "outputs": ["{options.outputDir}"],
       "options": {
-        "uiFramework": "@storybook/react",
-        "outputPath": "dist/storybook/graph-client",
-        "config": {
-          "configFolder": "graph/client/.storybook"
-        }
+        "configDir": "graph/client/.storybook",
+        "outputDir": "dist/storybook/graph-client"
       },
       "configurations": {
         "ci": {

@@ -1,13 +1,18 @@
-<p style="text-align: center;"><img src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx.png" width="600" alt="Nx - Smart, Fast and Extensible Build System"></p>
+<p style="text-align: center;">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-dark.svg">
+    <img alt="Nx - Smart Monorepos · Fast CI" src="https://raw.githubusercontent.com/nrwl/nx/master/images/nx-light.svg" width="100%">
+  </picture>
+</p>
 
 {{links}}
 
 <hr>
 
-# Nx: Smart, Fast and Extensible Build System
+# Nx: Smart Monorepos · Fast CI
 
-Nx is a next generation build system with first class monorepo support and powerful integrations.
+Nx is a build system, optimized for monorepos, with plugins for popular frameworks and tools and advanced CI capabilities including caching and distribution.
 
-This package is a [React Native plugin for Nx](https://nx.dev/pacakges/react-native).
+This package is a [React Native plugin for Nx](https://nx.dev/nx-api/react-native).
 
 {{content}}

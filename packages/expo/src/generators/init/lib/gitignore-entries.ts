@@ -2,6 +2,7 @@ export const gitIgnoreEntriesForExpo = `
 # Expo
 node_modules/
 .expo/
+.yarn/
 dist/
 npm-debug.*
 *.jks
@@ -11,4 +12,5 @@ npm-debug.*
 *.mobileprovision
 *.orig.*
 web-build/
+cache/
 `;

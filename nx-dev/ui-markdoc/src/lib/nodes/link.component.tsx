@@ -1,18 +1,26 @@
 import Link from 'next/link';
+import { cx } from '@nx/nx-dev/ui-primitives';
 
 export function CustomLink(props: any) {
   const target =
-    props.target || (props.href.startsWith('http') ? '_blank' : undefined);
+    props.target ||
+    (props.href.startsWith('http') || props.href.indexOf('.pdf') > -1
+      ? '_blank'
+      : undefined);
 
   return (
-    <Link {...props} passHref>
-      <a
-        target={target}
-        rel={target === '_blank' ? 'noreferrer' : undefined}
-        className={props.className}
-      >
-        {props.children}
-      </a>
+    <Link
+      prefetch={false}
+      {...props}
+      passHref
+      target={target}
+      rel={target === '_blank' ? 'noreferrer' : undefined}
+      className={cx(
+        props.className,
+        'text-blue-600 transition-colors ease-out hover:text-blue-700 dark:text-sky-500 dark:hover:text-sky-400'
+      )}
+    >
+      {props.children}
     </Link>
   );
 }

@@ -1,41 +1,27 @@
-import { readFileSync, readdirSync, statSync } from 'fs';
+import { readdirSync, readFileSync, statSync } from 'fs';
 import * as path from 'path';
-import type { Tree } from 'nx/src/generators/tree';
-import { logger } from 'nx/src/utils/logger';
+import { isBinaryPath } from '../utils/binary-extensions';
 
-const binaryExts = new Set([
-  // // Image types originally from https://github.com/sindresorhus/image-type/blob/5541b6a/index.js
-  '.jpg',
-  '.jpeg',
-  '.png',
-  '.gif',
-  '.webp',
-  '.flif',
-  '.cr2',
-  '.tif',
-  '.bmp',
-  '.jxr',
-  '.psd',
-  '.ico',
-  '.bpg',
-  '.jp2',
-  '.jpm',
-  '.jpx',
-  '.heic',
-  '.cur',
-  '.tgz',
+import { logger, type Tree } from 'nx/src/devkit-exports';
 
-  // Java files
-  '.jar',
-  '.keystore',
+/**
+ * Specify what should be done when a file is generated but already exists on the system
+ */
+export enum OverwriteStrategy {
+  Overwrite = 'overwrite',
+  KeepExisting = 'keepExisting',
+  ThrowIfExisting = 'throwIfExisting',
+}
 
-  // Font files
-  '.ttf',
-  '.otf',
-  '.woff',
-  '.woff2',
-  '.eot',
-]);
+/**
+ * Options for the generateFiles function
+ */
+export interface GenerateFilesOptions {
+  /**
+   * Specify what should be done when a file is generated but already exists on the system
+   */
+  overwriteStrategy?: OverwriteStrategy;
+}
 
 /**
  * Generates a folder of files based on provided templates.
@@ -58,14 +44,21 @@ const binaryExts = new Set([
  * @param srcFolder - the source folder of files (absolute path)
  * @param target - the target folder (relative to the tree root)
  * @param substitutions - an object of key-value pairs
+ * @param options - See {@link GenerateFilesOptions}
  */
 export function generateFiles(
   tree: Tree,
   srcFolder: string,
   target: string,
-  substitutions: { [k: string]: any }
+  substitutions: { [k: string]: any },
+  options: GenerateFilesOptions = {
+    overwriteStrategy: OverwriteStrategy.Overwrite,
+  }
 ): void {
-  const ejs = require('ejs');
+  options ??= {};
+  options.overwriteStrategy ??= OverwriteStrategy.Overwrite;
+
+  const ejs: typeof import('ejs') = require('ejs');
 
   const files = allFilesInDir(srcFolder);
   if (files.length === 0) {
@@ -82,12 +75,27 @@ export function generateFiles(
         substitutions
       );
 
-      if (binaryExts.has(path.extname(filePath))) {
+      if (tree.exists(computedPath)) {
+        if (options.overwriteStrategy === OverwriteStrategy.KeepExisting) {
+          return;
+        } else if (
+          options.overwriteStrategy === OverwriteStrategy.ThrowIfExisting
+        ) {
+          throw new Error(
+            `Generated file already exists, not allowed by overwrite strategy in generator (${computedPath})`
+          );
+        }
+        // else: file should be overwritten, so just fall through to file generation
+      }
+
+      if (isBinaryPath(filePath)) {
         newContent = readFileSync(filePath);
       } else {
         const template = readFileSync(filePath, 'utf-8');
         try {
-          newContent = ejs.render(template, substitutions, {});
+          newContent = ejs.render(template, substitutions, {
+            filename: filePath,
+          });
         } catch (e) {
           logger.error(`Error in ${filePath.replace(`${tree.root}/`, '')}:`);
           throw e;

@@ -4,7 +4,15 @@
   "overrides": [
     {
       "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
-      "rules": {}
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "name": "chalk",
+            "message": "Please use `picocolors` in place of `chalk` for rendering terminal colors"
+          }
+        ]
+      }
     },
     {
       "files": ["**/*.ts"],
@@ -12,7 +20,7 @@
       "rules": {
         "no-restricted-imports": [
           "error",
-          "@nrwl/workspace",
+          "@nx/workspace",
           "@angular-devkit/core",
           "@angular-devkit/schematics",
           "@angular-devkit/architect"
@@ -28,7 +36,32 @@
       ],
       "parser": "jsonc-eslint-parser",
       "rules": {
-        "@nrwl/nx/nx-plugin-checks": "error"
+        "@nx/nx-plugin-checks": "error"
+      }
+    },
+    {
+      "files": ["./package.json"],
+      "parser": "jsonc-eslint-parser",
+      "rules": {
+        "@nx/dependency-checks": [
+          "error",
+          {
+            "buildTargets": ["build-base"],
+            "ignoredDependencies": [
+              "nx",
+              "typescript",
+              "eslint",
+              "http-server", // Used by readModulePackageJson
+              // Installed by ensurePackage
+              "@nx/eslint",
+              "@nx/cypress",
+              "@nx/playwright",
+              "@nx/vite",
+              "@nx/webpack",
+              "@nx/jest"
+            ]
+          }
+        ]
       }
     }
   ],

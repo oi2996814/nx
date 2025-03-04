@@ -1,5 +1,5 @@
 import { findAllNpmDependencies } from './find-all-npm-dependencies';
-import { ProjectGraph } from '@nrwl/devkit';
+import { DependencyType, ProjectGraph } from '@nx/devkit';
 
 test('findAllNpmDependencies', () => {
   const graph: ProjectGraph = {
@@ -24,7 +24,7 @@ test('findAllNpmDependencies', () => {
         name: 'lib3',
         data: { files: [] },
       },
-    },
+    } as any,
     externalNodes: {
       'npm:react-native-image-picker': {
         type: 'npm',
@@ -50,37 +50,45 @@ test('findAllNpmDependencies', () => {
           packageName: 'react-native-snackbar',
         },
       },
-      'npm:@nrwl/react-native': {
+      'npm:@nx/react-native': {
         type: 'npm',
-        name: 'npm:@nrwl/react-native',
+        name: 'npm:@nx/react-native',
         data: {
           version: '1',
-          packageName: '@nrwl/react-native',
+          packageName: '@nx/react-native',
         },
       },
     },
     dependencies: {
       myapp: [
-        { type: 'static', source: 'myapp', target: 'lib1' },
-        { type: 'static', source: 'myapp', target: 'lib2' },
+        { type: DependencyType.static, source: 'myapp', target: 'lib1' },
+        { type: DependencyType.static, source: 'myapp', target: 'lib2' },
         {
-          type: 'static',
+          type: DependencyType.static,
           source: 'myapp',
           target: 'npm:react-native-image-picker',
         },
         {
-          type: 'static',
+          type: DependencyType.static,
           source: 'myapp',
-          target: 'npm:@nrwl/react-native',
+          target: 'npm:@nx/react-native',
         },
       ],
       lib1: [
-        { type: 'static', source: 'lib1', target: 'lib2' },
-        { type: 'static', source: 'lib3', target: 'npm:react-native-snackbar' },
+        { type: DependencyType.static, source: 'lib1', target: 'lib2' },
+        {
+          type: DependencyType.static,
+          source: 'lib3',
+          target: 'npm:react-native-snackbar',
+        },
       ],
-      lib2: [{ type: 'static', source: 'lib2', target: 'lib3' }],
+      lib2: [{ type: DependencyType.static, source: 'lib2', target: 'lib3' }],
       lib3: [
-        { type: 'static', source: 'lib3', target: 'npm:react-native-dialog' },
+        {
+          type: DependencyType.static,
+          source: 'lib3',
+          target: 'npm:react-native-dialog',
+        },
       ],
     },
   };

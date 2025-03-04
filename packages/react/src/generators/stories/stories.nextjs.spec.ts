@@ -1,12 +1,13 @@
-import {
-  readProjectConfiguration,
-  Tree,
-  updateProjectConfiguration,
-} from '@nrwl/devkit';
+import 'nx/src/internal-testing-utils/mock-project-graph';
+
+import { Tree } from '@nx/devkit';
 import storiesGenerator from './stories';
-import { createTreeWithEmptyV1Workspace } from '@nrwl/devkit/testing';
-import applicationGenerator from '../application/application';
-import { Linter } from '@nrwl/linter';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+/* eslint-disable @nx/enforce-module-boundaries */
+// nx-ignore-next-line
+import { applicationGenerator } from '@nx/next';
+/* eslint-enable @nx/enforce-module-boundaries */
+import { Linter } from '@nx/eslint';
 
 describe('nextjs:stories for applications', () => {
   let tree: Tree;
@@ -14,7 +15,7 @@ describe('nextjs:stories for applications', () => {
   beforeEach(async () => {
     tree = await createTestUIApp('test-ui-app');
     tree.write(
-      'apps/test-ui-app/components/test.tsx',
+      'test-ui-app/components/test.tsx',
       `import './test.module.scss';
 
       export interface TestProps {
@@ -32,47 +33,66 @@ describe('nextjs:stories for applications', () => {
     );
   });
 
-  it('should create the stories', async () => {
+  it('should create the stories with interaction tests', async () => {
     await storiesGenerator(tree, {
       project: 'test-ui-app',
-      generateCypressSpecs: false,
     });
 
     expect(
-      tree.exists('apps/test-ui-app/components/test.stories.tsx')
-    ).toBeTruthy();
+      tree.exists('test-ui-app/components/test.stories.tsx')
+    ).toMatchSnapshot();
+
+    const packageJson = JSON.parse(tree.read('package.json', 'utf-8'));
+    expect(
+      packageJson.devDependencies['@storybook/addon-interactions']
+    ).toBeDefined();
+    expect(packageJson.devDependencies['@storybook/test-runner']).toBeDefined();
+    expect(
+      packageJson.devDependencies['@storybook/testing-library']
+    ).toBeDefined();
+  });
+
+  it('should create the stories without interaction tests', async () => {
+    await storiesGenerator(tree, {
+      project: 'test-ui-app',
+      interactionTests: false,
+    });
+
+    expect(
+      tree.exists('test-ui-app/components/test.stories.tsx')
+    ).toMatchSnapshot();
+    const packageJson = JSON.parse(tree.read('package.json', 'utf-8'));
+    expect(
+      packageJson.devDependencies['@storybook/addon-interactions']
+    ).toBeUndefined();
+    expect(
+      packageJson.devDependencies['@storybook/test-runner']
+    ).toBeUndefined();
+    expect(
+      packageJson.devDependencies['@storybook/testing-library']
+    ).toBeUndefined();
   });
 
   it('should ignore paths', async () => {
     await storiesGenerator(tree, {
       project: 'test-ui-app',
-      generateCypressSpecs: false,
-      ignorePaths: ['apps/test-ui-app/components/**'],
+      ignorePaths: ['test-ui-app/components/**'],
     });
 
-    expect(
-      tree.exists('apps/test-ui-app/components/test.stories.tsx')
-    ).toBeFalsy();
+    expect(tree.exists('test-ui-app/components/test.stories.tsx')).toBeFalsy();
   });
 });
 
 export async function createTestUIApp(name: string): Promise<Tree> {
-  const tree = createTreeWithEmptyV1Workspace();
+  const tree = createTreeWithEmptyWorkspace();
   await applicationGenerator(tree, {
     e2eTestRunner: 'none',
     linter: Linter.EsLint,
-    skipFormat: false,
+    skipFormat: true,
     style: 'css',
     unitTestRunner: 'none',
-    name,
-    standaloneConfig: false,
+    directory: name,
   });
-
-  const config = readProjectConfiguration(tree, name);
-  config.sourceRoot = config.root;
-  config.targets.build.executor = '@nrwl/next:build';
-  config.targets.serve.executor = '@nrwl/next:server';
-  updateProjectConfiguration(tree, name, config);
 
   return tree;
 }

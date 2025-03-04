@@ -1,142 +1,259 @@
 import {
   addDependenciesToPackageJson,
-  convertNxGenerator,
   formatFiles,
   GeneratorCallback,
   logger,
+  readNxJson,
   readProjectConfiguration,
+  runTasksInSerial,
   Tree,
-} from '@nrwl/devkit';
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
+} from '@nx/devkit';
+import { initGenerator as jsInitGenerator } from '@nx/js';
 
-import { cypressProjectGenerator } from '../cypress-project/cypress-project';
 import { StorybookConfigureSchema } from './schema';
 import { initGenerator } from '../init/init';
 
 import {
-  addAngularStorybookTask,
+  addAngularStorybookTarget,
   addBuildStorybookToCacheableOperations,
-  addStorybookTask,
+  addStaticTarget,
+  addStorybookTarget,
+  addStorybookToNamedInputs,
+  addStorybookToTargetDefaults,
   configureTsProjectConfig,
   configureTsSolutionConfig,
   createProjectStorybookDir,
-  createRootStorybookDir,
+  createStorybookTsconfigFile,
+  editTsconfigBaseJson,
+  findNextConfig,
+  findViteConfig,
+  isUsingReactNative,
+  projectIsRootProjectInStandaloneWorkspace,
   updateLintConfig,
-} from './util-functions';
-import { Linter } from '@nrwl/linter';
-import { findStorybookAndBuildTargetsAndCompiler } from '../../utils/utilities';
+} from './lib/util-functions';
+import { Linter } from '@nx/eslint';
 import {
-  storybookNextAddonVersion,
-  storybookSwcAddonVersion,
-  storybookTestRunnerVersion,
+  findStorybookAndBuildTargetsAndCompiler,
+  pleaseUpgrade,
+  storybookMajorVersion,
+} from '../../utils/utilities';
+import {
+  coreJsVersion,
+  nxVersion,
+  storybookVersion,
+  tsLibVersion,
+  tsNodeVersion,
 } from '../../utils/versions';
+import { interactionTestsDependencies } from './lib/interaction-testing.utils';
+import { ensureDependencies } from './lib/ensure-dependencies';
+import { editRootTsConfig } from './lib/edit-root-tsconfig';
+import { getProjectType } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
-export async function configurationGenerator(
+export function configurationGenerator(
+  tree: Tree,
+  schema: StorybookConfigureSchema
+) {
+  return configurationGeneratorInternal(tree, { addPlugin: false, ...schema });
+}
+
+export async function configurationGeneratorInternal(
   tree: Tree,
   rawSchema: StorybookConfigureSchema
 ) {
-  const schema = normalizeSchema(rawSchema);
+  const storybookMajor = storybookMajorVersion();
+  if (storybookMajor > 0 && storybookMajor === 6) {
+    throw new Error(pleaseUpgrade());
+  } else if (storybookMajor === 7) {
+    logger.warn(
+      `Support for Storybook 7 is deprecated. Please upgrade to Storybook 8. See https://nx.dev/nx-api/storybook/generators/migrate-8 for more details.`
+    );
+  }
+
+  const schema = normalizeSchema(tree, rawSchema);
 
   const tasks: GeneratorCallback[] = [];
 
-  const { projectType, targets } = readProjectConfiguration(tree, schema.name);
-  const { nextBuildTarget, compiler } =
-    findStorybookAndBuildTargetsAndCompiler(targets);
+  const { projectType, targets, root } = readProjectConfiguration(
+    tree,
+    schema.project
+  );
+  const { compiler } = findStorybookAndBuildTargetsAndCompiler(targets);
 
+  const viteConfig = findViteConfig(tree, root);
+  const viteConfigFilePath = viteConfig?.fullConfigPath;
+  const viteConfigFileName = viteConfig?.viteConfigFileName;
+  const nextConfigFilePath = findNextConfig(tree, root);
+
+  if (viteConfigFilePath) {
+    if (schema.uiFramework === '@storybook/react-webpack5') {
+      logger.info(
+        `Your project ${schema.project} uses Vite as a bundler.
+        Nx will configure Storybook for this project to use Vite as well.`
+      );
+      schema.uiFramework = '@storybook/react-vite';
+    }
+    if (schema.uiFramework === '@storybook/web-components-webpack5') {
+      logger.info(
+        `Your project ${schema.project} uses Vite as a bundler.
+        Nx will configure Storybook for this project to use Vite as well.`
+      );
+      schema.uiFramework = '@storybook/web-components-vite';
+    }
+  }
+
+  if (nextConfigFilePath) {
+    schema.uiFramework = '@storybook/nextjs';
+  }
+
+  const jsInitTask = await jsInitGenerator(tree, {
+    ...schema,
+    skipFormat: true,
+  });
+  tasks.push(jsInitTask);
   const initTask = await initGenerator(tree, {
-    uiFramework: schema.uiFramework,
+    skipFormat: true,
+    addPlugin: schema.addPlugin,
   });
   tasks.push(initTask);
+  tasks.push(ensureDependencies(tree, { uiFramework: schema.uiFramework }));
 
-  createRootStorybookDir(tree, schema.js, schema.tsConfiguration);
+  editRootTsConfig(tree);
+
+  const nxJson = readNxJson(tree);
+  const hasPlugin = nxJson.plugins?.some((p) =>
+    typeof p === 'string'
+      ? p === '@nx/storybook/plugin'
+      : p.plugin === '@nx/storybook/plugin'
+  );
+
+  const mainDir =
+    !!nextConfigFilePath &&
+    getProjectType(tree, root, projectType) === 'application'
+      ? 'components'
+      : 'src';
+
+  const usesVite =
+    !!viteConfigFilePath || schema.uiFramework?.endsWith('-vite');
+  const usesReactNative = isUsingReactNative(schema.project);
+
   createProjectStorybookDir(
     tree,
-    schema.name,
+    schema.project,
     schema.uiFramework,
     schema.js,
     schema.tsConfiguration,
-    !!nextBuildTarget,
-    compiler === 'swc'
+    root,
+    projectType,
+    projectIsRootProjectInStandaloneWorkspace(root),
+    schema.interactionTests,
+    mainDir,
+    !!nextConfigFilePath,
+    compiler === 'swc',
+    usesVite,
+    viteConfigFilePath,
+    hasPlugin,
+    viteConfigFileName,
+    usesReactNative
   );
+
+  if (schema.uiFramework !== '@storybook/angular') {
+    createStorybookTsconfigFile(
+      tree,
+      root,
+      schema.uiFramework,
+      projectIsRootProjectInStandaloneWorkspace(root),
+      mainDir
+    );
+  }
   configureTsProjectConfig(tree, schema);
+  editTsconfigBaseJson(tree);
   configureTsSolutionConfig(tree, schema);
   updateLintConfig(tree, schema);
 
   addBuildStorybookToCacheableOperations(tree);
-
-  if (schema.uiFramework === '@storybook/angular') {
-    addAngularStorybookTask(tree, schema.name, schema.configureTestRunner);
-  } else {
-    addStorybookTask(
-      tree,
-      schema.name,
-      schema.uiFramework,
-      schema.configureTestRunner
-    );
+  addStorybookToNamedInputs(tree);
+  if (!hasPlugin) {
+    addStorybookToTargetDefaults(tree);
   }
 
-  if (schema.configureCypress) {
-    if (projectType !== 'application') {
-      const cypressTask = await cypressProjectGenerator(tree, {
-        name: schema.name,
-        js: schema.js,
-        linter: schema.linter,
-        directory: schema.cypressDirectory,
-        standaloneConfig: schema.standaloneConfig,
-      });
-      tasks.push(cypressTask);
+  let devDeps = {};
+
+  if (!hasPlugin || schema.addExplicitTargets) {
+    if (schema.uiFramework === '@storybook/angular') {
+      addAngularStorybookTarget(tree, schema.project, schema.interactionTests);
     } else {
-      logger.warn('There is already an e2e project setup');
+      addStorybookTarget(
+        tree,
+        schema.project,
+        schema.uiFramework,
+        schema.interactionTests
+      );
     }
+    if (schema.configureStaticServe) {
+      await addStaticTarget(tree, schema);
+    }
+  } else {
+    devDeps['storybook'] = storybookVersion;
   }
 
-  if (nextBuildTarget && projectType === 'application') {
-    tasks.push(
-      addDependenciesToPackageJson(
-        tree,
-        {},
-        {
-          ['storybook-addon-next']: storybookNextAddonVersion,
-          ['storybook-addon-swc']: storybookSwcAddonVersion,
-        }
-      )
-    );
-  } else if (compiler === 'swc') {
-    tasks.push(
-      addDependenciesToPackageJson(
-        tree,
-        {},
-        {
-          ['storybook-addon-swc']: storybookSwcAddonVersion,
-        }
-      )
-    );
+  if (schema.tsConfiguration) {
+    devDeps['ts-node'] = tsNodeVersion;
   }
 
-  if (schema.configureTestRunner === true) {
-    tasks.push(
-      addDependenciesToPackageJson(
-        tree,
-        {},
-        {
-          '@storybook/test-runner': storybookTestRunnerVersion,
-        }
-      )
-    );
+  if (usesVite && !viteConfigFilePath) {
+    devDeps['tslib'] = tsLibVersion;
   }
 
-  await formatFiles(tree);
+  if (schema.interactionTests) {
+    devDeps = {
+      ...devDeps,
+      ...interactionTestsDependencies(),
+    };
+  }
+
+  if (schema.configureStaticServe) {
+    devDeps['@nx/web'] = nxVersion;
+  }
+
+  if (
+    projectType !== 'application' &&
+    schema.uiFramework === '@storybook/react-webpack5'
+  ) {
+    devDeps['core-js'] = coreJsVersion;
+  }
+
+  if (schema.uiFramework?.endsWith('-vite') && !viteConfigFilePath) {
+    // This means that the user has selected a Vite framework
+    // but the project does not have Vite configuration.
+    // We need to install the @nx/vite plugin in order to be able to use
+    // the nxViteTsPaths plugin to register the tsconfig paths in Vite.
+    devDeps['@nx/vite'] = nxVersion;
+  }
+
+  tasks.push(addDependenciesToPackageJson(tree, {}, devDeps));
+
+  if (!schema.skipFormat) {
+    await formatFiles(tree);
+  }
 
   return runTasksInSerial(...tasks);
 }
 
 function normalizeSchema(
+  tree: Tree,
   schema: StorybookConfigureSchema
 ): StorybookConfigureSchema {
+  const nxJson = readNxJson(tree);
+  const addPlugin =
+    process.env.NX_ADD_PLUGINS !== 'false' &&
+    nxJson.useInferencePlugins !== false;
+
   const defaults = {
-    configureCypress: true,
+    interactionTests: true,
     linter: Linter.EsLint,
     js: false,
+    tsConfiguration: true,
+    addPlugin,
   };
   return {
     ...defaults,
@@ -145,6 +262,3 @@ function normalizeSchema(
 }
 
 export default configurationGenerator;
-export const configurationSchematic = convertNxGenerator(
-  configurationGenerator
-);

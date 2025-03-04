@@ -1,4 +1,4 @@
-Depending on your testing type, the Cypress executor is configured in different ways. The following are sample configurations that are created via the [cypress-project](/packages/cypress/generators/cypress-project) and [cypress-component-project](/packages/cypress/generators/cypress-component-project) generators.
+Depending on your testing type, the Cypress executor is configured in different ways. The following are sample configurations that are created via the [configuration](/nx-api/cypress/generators/configuration) and [component-configuration](/nx-api/cypress/generators/component-configuration) generators.
 
 {% tabs %}
 {% tab label="E2E Testing" %}
@@ -6,7 +6,7 @@ Depending on your testing type, the Cypress executor is configured in different 
 ```json
 "targets": {
   "e2e": {
-    "executor": "@nrwl/cypress:cypress",
+    "executor": "@nx/cypress:cypress",
     "options": {
       "cypressConfig": "apps/app-e2e/cypres.config.ts",
       "devServerTarget": "my-react-app:serve",
@@ -32,13 +32,13 @@ The `baseUrl` defined in the Cypress config file is the last value used if no ur
 
 When running in CI it doesn't make sense to start up a dev server since there aren't changes to watch for.
 
-You can use [`@nrwl/web:file-server`](/packages/web/executors/file-server) to serve the pre-built static files of your frontend project.
+You can use [`@nx/web:file-server`](/nx-api/web/executors/file-server) to serve the pre-built static files of your frontend project.
 
 In some _frontend_ application, add a 'static-serve' target.
 
 ```json
 "serve-static": {
-  "executor": "@nrwl/web:file-server",
+  "executor": "@nx/web:file-server",
   "options":{
     "buildTarget": "frontend:build"
   }
@@ -59,11 +59,11 @@ In the _e2e_ application add a configuration to change `devServerTarget` to poin
 ```
 
 {% callout type="note" title="What about Node projects?" %}
-The same can be done for backend node apps with [`@nrwl/js:node` executor](/packages/js/executors/node)
+The same can be done for backend node apps with [`@nx/js:node` executor](/nx-api/js/executors/node)
 {% /callout %}
 
 ```bash
-nx e2e my-app-e2e --configuration=ci
+nx e2e my-app-e2e
 ```
 
 {% /tab %}
@@ -72,15 +72,15 @@ nx e2e my-app-e2e --configuration=ci
 {% callout type="note" title="Cypress Component Testing" %}
 When adding component testing to a project, it's best to use the framework specific generator, instead `cypress-component-project` directly.
 
-- [React component testing](/packages/react/generators/cypress-component-configuration)
-- [Angular component testing](/packages/angular/generators/cypress-component-configuration)
+- [React component testing](/nx-api/react/generators/cypress-component-configuration)
+- [Angular component testing](/nx-api/angular/generators/cypress-component-configuration)
 
 {% /callout %}
 
 ```json
 "targets": {
   "component-test": {
-    "executor": "@nrwl/cypress:cypress",
+    "executor": "@nx/cypress:cypress",
     "options": {
       "cypressConfig": "apps/app/cypres.config.ts",
       "devServerTarget": "my-react-app:build",
@@ -99,12 +99,12 @@ Instead, Nx needs to know what build target to create the correct configuration 
 
 ### Environment Variables
 
-Using [executor configurations](/recipe/use-executor-configurations#use-executor-configurations) offers flexibility to set environment variables
+Using [executor configurations](/concepts/executors-and-configurations#executors-and-configurations) offers flexibility to set environment variables
 
 ```json
 "targets": {
   "e2e": {
-    "executor": "@nrwl/cypress:cypress",
+    "executor": "@nx/cypress:cypress",
     "options": {
       "cypressConfig": "apps/app-e2e/cypres.config.ts",
       "devServerTarget": "my-react-app:serve",
@@ -118,7 +118,7 @@ Using [executor configurations](/recipe/use-executor-configurations#use-executor
       },
       "dev": {
         "env": {
-          "API_URL": "http://locahost:3333/api"
+          "API_URL": "http://localhost:3333/api"
         }
       }
     }
@@ -126,4 +126,4 @@ Using [executor configurations](/recipe/use-executor-configurations#use-executor
 }
 ```
 
-Read more on different ways to use [environment variables for cypress executor](/packages/cypress#environment-variables)
+Read more on different ways to use [environment variables for cypress executor](/nx-api/cypress#environment-variables)

@@ -14,12 +14,9 @@ export function reactNativeBuildTarget(platform: 'ios.sim' | 'android.emu') {
 export function expoBuildTarget(platform: 'ios.sim' | 'android.emu') {
   return {
     options: {
-      detoxConfiguration: `${platform}.debug`,
+      detoxConfiguration: `${platform}.local`,
     },
     configurations: {
-      local: {
-        detoxConfiguration: `${platform}.local`,
-      },
       bare: {
         detoxConfiguration: `${platform}.debug`,
       },
@@ -32,17 +29,19 @@ export function expoBuildTarget(platform: 'ios.sim' | 'android.emu') {
 
 export function reactNativeTestTarget(
   platform: 'ios.sim' | 'android.emu',
-  name: string
+  e2eName: string
 ) {
+  const buildPlatform = platform === 'ios.sim' ? 'ios' : 'android';
+
   return {
     options: {
       detoxConfiguration: `${platform}.debug`,
-      buildTarget: `${name}:build-ios`,
+      buildTarget: `${e2eName}:build-${buildPlatform}`,
     },
     configurations: {
       production: {
         detoxConfiguration: `${platform}.release`,
-        buildTarget: `${name}:build-ios:production`,
+        buildTarget: `${e2eName}:build-${buildPlatform}:production`,
       },
     },
   };
@@ -50,25 +49,23 @@ export function reactNativeTestTarget(
 
 export function expoTestTarget(
   platform: 'ios.sim' | 'android.emu',
-  name: string
+  e2eName: string
 ) {
+  const buildPlatform = platform === 'ios.sim' ? 'ios' : 'android';
+
   return {
     options: {
-      detoxConfiguration: `${platform}.eas`,
-      buildTarget: `${name}:build-ios`,
+      detoxConfiguration: `${platform}.local`,
+      buildTarget: `${e2eName}:build-${buildPlatform}`,
     },
     configurations: {
-      local: {
-        detoxConfiguration: `${platform}.local`,
-        buildTarget: `${name}:build-ios:local`,
-      },
       bare: {
         detoxConfiguration: `${platform}.debug`,
-        buildTarget: `${name}:build-ios:bare`,
+        buildTarget: `${e2eName}:build-${buildPlatform}:bare`,
       },
       production: {
         detoxConfiguration: `${platform}.release`,
-        buildTarget: `${name}:build-ios:production`,
+        buildTarget: `${e2eName}:build-${buildPlatform}:production`,
       },
     },
   };

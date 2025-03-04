@@ -3,60 +3,66 @@ import {
   addProjectConfiguration,
   joinPathFragments,
   ProjectConfiguration,
+  readNxJson,
   Tree,
-} from '@nrwl/devkit';
+  writeJson,
+} from '@nx/devkit';
+import { addBuildTargetDefaults } from '@nx/devkit/src/generators/target-defaults-utils';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
+import { getImportPath } from '@nx/js/src/utils/get-import-path';
+import { nextVersion } from '../../../utils/versions';
+import { reactDomVersion, reactVersion } from '@nx/react';
 
 export function addProject(host: Tree, options: NormalizedSchema) {
   const targets: Record<string, any> = {};
 
-  targets.build = {
-    builder: '@nrwl/next:build',
-    outputs: ['{options.outputPath}'],
-    defaultConfiguration: 'production',
-    options: {
-      root: options.appProjectRoot,
-      outputPath: joinPathFragments('dist', options.appProjectRoot),
-    },
-    configurations: {
-      development: {
-        outputPath: options.appProjectRoot,
-      },
-      production: {},
-    },
-  };
+  // Check if plugin exists in nx.json and if it doesn't then we can continue
+  // with the default targets.
 
-  targets.serve = {
-    builder: '@nrwl/next:server',
-    defaultConfiguration: 'development',
-    options: {
-      buildTarget: `${options.projectName}:build`,
-      dev: true,
-    },
-    configurations: {
-      development: {
-        buildTarget: `${options.projectName}:build:development`,
+  const nxJson = readNxJson(host);
+  const hasPlugin = nxJson.plugins?.some((p) =>
+    typeof p === 'string'
+      ? p === '@nx/next/plugin'
+      : p.plugin === '@nx/next/plugin'
+  );
+
+  if (!hasPlugin) {
+    addBuildTargetDefaults(host, '@nx/next:build');
+
+    targets.build = {
+      executor: '@nx/next:build',
+      outputs: ['{options.outputPath}'],
+      defaultConfiguration: 'production',
+      options: {
+        outputPath: options.outputPath,
+      },
+      configurations: {
+        development: {
+          outputPath: options.appProjectRoot,
+        },
+        production: {},
+      },
+    };
+
+    targets.serve = {
+      executor: '@nx/next:server',
+      defaultConfiguration: 'development',
+      options: {
+        buildTarget: `${options.projectName}:build`,
         dev: true,
       },
-      production: {
-        buildTarget: `${options.projectName}:build:production`,
-        dev: false,
+      configurations: {
+        development: {
+          buildTarget: `${options.projectName}:build:development`,
+          dev: true,
+        },
+        production: {
+          buildTarget: `${options.projectName}:build:production`,
+          dev: false,
+        },
       },
-    },
-  };
-
-  if (options.server) {
-    targets.serve.options = {
-      ...targets.serve.options,
-      customServerPath: options.server,
     };
   }
-
-  targets.export = {
-    builder: '@nrwl/next:export',
-    options: {
-      buildTarget: `${options.projectName}:build:production`,
-    },
-  };
 
   const project: ProjectConfiguration = {
     root: options.appProjectRoot,
@@ -66,12 +72,26 @@ export function addProject(host: Tree, options: NormalizedSchema) {
     tags: options.parsedTags,
   };
 
-  addProjectConfiguration(
-    host,
-    options.projectName,
-    {
+  if (isUsingTsSolutionSetup(host)) {
+    writeJson(host, joinPathFragments(options.appProjectRoot, 'package.json'), {
+      name: getImportPath(host, options.name),
+      version: '0.0.1',
+      private: true,
+      dependencies: {
+        next: nextVersion,
+        react: reactVersion,
+        'react-dom': reactDomVersion,
+      },
+      nx: {
+        name: options.name,
+        projectType: 'application',
+        sourceRoot: options.appProjectRoot,
+        tags: options.parsedTags?.length ? options.parsedTags : undefined,
+      },
+    });
+  } else {
+    addProjectConfiguration(host, options.projectName, {
       ...project,
-    },
-    options.standaloneConfig
-  );
+    });
+  }
 }

@@ -1,80 +1,19 @@
+/* eslint-disable @nx/enforce-module-boundaries */
 // nx-ignore-next-line
 import type {
+  ProjectFileMap,
   ProjectGraphDependency,
   ProjectGraphProjectNode,
-} from '@nrwl/devkit';
-import { ActionObject, ActorRef, State, StateNodeConfig } from 'xstate';
-
-// The hierarchical (recursive) schema for the states
-export interface DepGraphSchema {
-  states: {
-    idle: {};
-    unselected: {};
-    focused: {};
-    textFiltered: {};
-    customSelected: {};
-    tracing: {};
-  };
-}
-
-export interface GraphPerfReport {
-  renderTime: number;
-  numNodes: number;
-  numEdges: number;
-}
-
-export type TracingAlgorithmType = 'shortest' | 'all';
-// The events that the machine handles
-
-export type DepGraphUIEvents =
-  | {
-      type: 'setSelectedProjectsFromGraph';
-      selectedProjectNames: string[];
-      perfReport: GraphPerfReport;
-    }
-  | { type: 'selectProject'; projectName: string }
-  | { type: 'deselectProject'; projectName: string }
-  | { type: 'selectAll' }
-  | { type: 'deselectAll' }
-  | { type: 'selectAffected' }
-  | { type: 'setGroupByFolder'; groupByFolder: boolean }
-  | { type: 'setTracingStart'; projectName: string }
-  | { type: 'setTracingEnd'; projectName: string }
-  | { type: 'clearTraceStart' }
-  | { type: 'clearTraceEnd' }
-  | { type: 'setTracingAlgorithm'; algorithm: TracingAlgorithmType }
-  | { type: 'setCollapseEdges'; collapseEdges: boolean }
-  | { type: 'setIncludeProjectsByPath'; includeProjectsByPath: boolean }
-  | { type: 'incrementSearchDepth' }
-  | { type: 'decrementSearchDepth' }
-  | { type: 'setSearchDepthEnabled'; searchDepthEnabled: boolean }
-  | { type: 'setSearchDepth'; searchDepth: number }
-  | { type: 'focusProject'; projectName: string }
-  | { type: 'unfocusProject' }
-  | { type: 'filterByText'; search: string }
-  | { type: 'clearTextFilter' }
-  | {
-      type: 'initGraph';
-      projects: ProjectGraphProjectNode[];
-      dependencies: Record<string, ProjectGraphDependency[]>;
-      affectedProjects: string[];
-      workspaceLayout: {
-        libsDir: string;
-        appsDir: string;
-      };
-    }
-  | {
-      type: 'updateGraph';
-      projects: ProjectGraphProjectNode[];
-      dependencies: Record<string, ProjectGraphDependency[]>;
-    };
+} from '@nx/devkit';
+/* eslint-enable @nx/enforce-module-boundaries */
+import { TracingAlgorithmType } from '../feature-projects/machines/interfaces';
 
 // The events that the graph actor handles
-
 export type GraphRenderEvents =
   | {
       type: 'notifyGraphInitGraph';
       projects: ProjectGraphProjectNode[];
+      fileMap: ProjectFileMap;
       dependencies: Record<string, ProjectGraphDependency[]>;
       affectedProjects: string[];
       workspaceLayout: {
@@ -83,10 +22,12 @@ export type GraphRenderEvents =
       };
       groupByFolder: boolean;
       collapseEdges: boolean;
+      composite: { enabled: boolean; context: string | null };
     }
   | {
       type: 'notifyGraphUpdateGraph';
       projects: ProjectGraphProjectNode[];
+      fileMap: ProjectFileMap;
       dependencies: Record<string, ProjectGraphDependency[]>;
       affectedProjects: string[];
       workspaceLayout: {
@@ -96,6 +37,7 @@ export type GraphRenderEvents =
       groupByFolder: boolean;
       collapseEdges: boolean;
       selectedProjects: string[];
+      composite: { enabled: boolean; context: string | null };
     }
   | {
       type: 'notifyGraphFocusProject';
@@ -130,90 +72,5 @@ export type GraphRenderEvents =
       start: string;
       end: string;
       algorithm: TracingAlgorithmType;
-    };
-
-export type RouteEvents =
-  | {
-      type: 'notifyRouteFocusProject';
-      focusedProject: string;
     }
-  | {
-      type: 'notifyRouteGroupByFolder';
-      groupByFolder: boolean;
-    }
-  | {
-      type: 'notifyRouteCollapseEdges';
-      collapseEdges: boolean;
-    }
-  | {
-      type: 'notifyRouteSearchDepth';
-      searchDepthEnabled: boolean;
-      searchDepth: number;
-    }
-  | {
-      type: 'notifyRouteUnfocusProject';
-    }
-  | {
-      type: 'notifyRouteSelectAll';
-    }
-  | {
-      type: 'notifyRouteSelectAffected';
-    }
-  | { type: 'notifyRouteClearSelect' }
-  | {
-      type: 'notifyRouteTracing';
-      start: string;
-      end: string;
-      algorithm: TracingAlgorithmType;
-    };
-
-export type AllEvents = DepGraphUIEvents | GraphRenderEvents | RouteEvents;
-
-// The context (extended state) of the machine
-export interface DepGraphContext {
-  projects: ProjectGraphProjectNode[];
-  dependencies: Record<string, ProjectGraphDependency[]>;
-  affectedProjects: string[];
-  selectedProjects: string[];
-  focusedProject: string | null;
-  textFilter: string;
-  includePath: boolean;
-  searchDepth: number;
-  searchDepthEnabled: boolean;
-  groupByFolder: boolean;
-  collapseEdges: boolean;
-  workspaceLayout: {
-    libsDir: string;
-    appsDir: string;
-  };
-  graphActor: ActorRef<GraphRenderEvents>;
-  routeSetterActor: ActorRef<RouteEvents>;
-  routeListenerActor: ActorRef<DepGraphUIEvents>;
-  lastPerfReport: GraphPerfReport;
-  tracing: {
-    start: string;
-    end: string;
-    algorithm: TracingAlgorithmType;
-  };
-}
-
-export type DepGraphStateNodeConfig = StateNodeConfig<
-  DepGraphContext,
-  {},
-  DepGraphUIEvents,
-  ActionObject<DepGraphContext, DepGraphUIEvents>
->;
-
-export type DepGraphSend = (
-  event: DepGraphUIEvents | DepGraphUIEvents[]
-) => void;
-
-export type DepGraphState = State<
-  DepGraphContext,
-  DepGraphUIEvents,
-  any,
-  {
-    value: any;
-    context: DepGraphContext;
-  }
->;
+  | { type: 'notifyGraphDisableCompositeGraph' };

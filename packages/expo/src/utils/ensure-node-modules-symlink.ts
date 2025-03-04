@@ -1,6 +1,6 @@
-import { join } from 'path';
+import { existsSync, rmSync, symlinkSync } from 'node:fs';
 import { platform } from 'os';
-import * as fs from 'fs';
+import { join } from 'path';
 
 /**
  * This function symlink workspace node_modules folder with app project's node_mdules folder.
@@ -15,7 +15,7 @@ export function ensureNodeModulesSymlink(
   projectRoot: string
 ): void {
   const worksapceNodeModulesPath = join(workspaceRoot, 'node_modules');
-  if (!fs.existsSync(worksapceNodeModulesPath)) {
+  if (!existsSync(worksapceNodeModulesPath)) {
     throw new Error(`Cannot find ${worksapceNodeModulesPath}`);
   }
 
@@ -23,8 +23,8 @@ export function ensureNodeModulesSymlink(
   // `mklink /D` requires admin privilege in Windows so we need to use junction
   const symlinkType = platform() === 'win32' ? 'junction' : 'dir';
 
-  if (fs.existsSync(appNodeModulesPath)) {
-    fs.rmdirSync(appNodeModulesPath, { recursive: true });
+  if (existsSync(appNodeModulesPath)) {
+    rmSync(appNodeModulesPath, { recursive: true, force: true });
   }
-  fs.symlinkSync(worksapceNodeModulesPath, appNodeModulesPath, symlinkType);
+  symlinkSync(worksapceNodeModulesPath, appNodeModulesPath, symlinkType);
 }

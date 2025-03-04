@@ -1,114 +1,49 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`new --preset angular should generate necessary npm dependencies 1`] = `
-Object {
-  "dependencies": Object {
-    "@nrwl/angular": "0.0.1",
-  },
-  "devDependencies": Object {
-    "@nrwl/cli": "0.0.1",
-    "@nrwl/workspace": "0.0.1",
+exports[`new --preset should generate necessary npm dependencies for empty preset 1`] = `
+{
+  "dependencies": {},
+  "devDependencies": {
+    "@nx/js": "0.0.1",
+    "@nx/workspace": "0.0.1",
     "nx": "0.0.1",
-    "prettier": "^2.6.2",
-    "typescript": "~4.8.2",
   },
   "license": "MIT",
-  "name": "my-workspace",
+  "name": "@my-workspace/source",
   "private": true,
-  "scripts": Object {
-    "build": "nx build",
-    "start": "nx serve",
-    "test": "nx test",
-  },
-  "version": "0.0.0",
-}
-`;
-
-exports[`new --preset empty should generate necessary npm dependencies 1`] = `
-Object {
-  "dependencies": Object {},
-  "devDependencies": Object {
-    "@nrwl/cli": "0.0.1",
-    "@nrwl/workspace": "0.0.1",
-    "nx": "0.0.1",
-    "prettier": "^2.6.2",
-    "typescript": "~4.8.2",
-  },
-  "license": "MIT",
-  "name": "my-workspace",
-  "private": true,
-  "scripts": Object {
-    "build": "nx build",
-    "start": "nx serve",
-    "test": "nx test",
-  },
-  "version": "0.0.0",
-}
-`;
-
-exports[`new --preset react should generate necessary npm dependencies 1`] = `
-Object {
-  "dependencies": Object {},
-  "devDependencies": Object {
-    "@nrwl/cli": "0.0.1",
-    "@nrwl/react": "0.0.1",
-    "@nrwl/workspace": "0.0.1",
-    "nx": "0.0.1",
-    "prettier": "^2.6.2",
-    "typescript": "~4.8.2",
-  },
-  "license": "MIT",
-  "name": "my-workspace",
-  "private": true,
-  "scripts": Object {
-    "build": "nx build",
-    "start": "nx serve",
-    "test": "nx test",
-  },
+  "scripts": {},
   "version": "0.0.0",
 }
 `;
 
 exports[`new should generate an empty nx.json 1`] = `
-Object {
+{
   "$schema": "./node_modules/nx/schemas/nx-schema.json",
-  "affected": Object {
-    "defaultBase": "main",
-  },
-  "namedInputs": Object {
-    "default": Array [
+  "namedInputs": {
+    "default": [
       "{projectRoot}/**/*",
       "sharedGlobals",
     ],
-    "production": Array [
+    "production": [
       "default",
     ],
-    "sharedGlobals": Array [],
+    "sharedGlobals": [],
   },
-  "npmScope": "npmScope",
-  "targetDefaults": Object {
-    "build": Object {
-      "dependsOn": Array [
-        "^build",
-      ],
-      "inputs": Array [
-        "production",
-        "^production",
-      ],
-    },
-  },
-  "tasksRunnerOptions": Object {
-    "default": Object {
-      "options": Object {
-        "cacheableOperations": Array [
-          "build",
-          "lint",
-          "test",
-          "e2e",
-        ],
-      },
-      "runner": "nx/tasks-runners/default",
-    },
+}
+`;
+
+exports[`new should skip install 1`] = `
+{
+  "$schema": "./node_modules/nx/schemas/nx-schema.json",
+  "namedInputs": {
+    "default": [
+      "{projectRoot}/**/*",
+      "sharedGlobals",
+    ],
+    "production": [
+      "default",
+    ],
+    "sharedGlobals": [],
   },
 }
 `;

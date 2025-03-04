@@ -1,55 +1,81 @@
 import { existsSync } from 'fs';
 import { dirname, join } from 'path';
+import { NxJsonConfiguration } from '../config/nx-json';
 import {
-  InputDefinition,
+  ProjectConfiguration,
+  ProjectMetadata,
   TargetConfiguration,
 } from '../config/workspace-json-project-json';
+import { mergeTargetConfigurations } from '../project-graph/utils/project-configuration-utils';
 import { readJsonFile } from './fileutils';
-import { workspaceRoot } from './workspace-root';
+import { getNxRequirePaths } from './installation-directory';
+import {
+  PackageManagerCommands,
+  getPackageManagerCommand,
+} from './package-manager';
 
-export type PackageJsonTargetConfiguration = Omit<
-  TargetConfiguration,
-  'executor'
->;
-
-export interface NxProjectPackageJsonConfiguration {
-  implicitDependencies?: string[];
-  tags?: string[];
-  namedInputs?: { [inputName: string]: (string | InputDefinition)[] };
-  targets?: Record<string, PackageJsonTargetConfiguration>;
+export interface NxProjectPackageJsonConfiguration
+  extends Partial<ProjectConfiguration> {
+  includedScripts?: string[];
 }
 
-export type PackageGroup =
+export type ArrayPackageGroup = { package: string; version: string }[];
+export type MixedPackageGroup =
   | (string | { package: string; version: string })[]
   | Record<string, string>;
+export type PackageGroup = MixedPackageGroup | ArrayPackageGroup;
 
 export interface NxMigrationsConfiguration {
   migrations?: string;
   packageGroup?: PackageGroup;
 }
 
+type PackageOverride = { [key: string]: string | PackageOverride };
+
 export interface PackageJson {
   // Generic Package.Json Configuration
   name: string;
   version: string;
+  license?: string;
+  private?: boolean;
   scripts?: Record<string, string>;
   type?: 'module' | 'commonjs';
   main?: string;
   types?: string;
+  // interchangeable with `types`: https://www.typescriptlang.org/docs/handbook/declaration-files/publishing.html#including-declarations-in-your-npm-package
+  typings?: string;
   module?: string;
-  exports?: Record<
-    string,
-    { types?: string; require?: string; import?: string }
-  >;
+  exports?:
+    | string
+    | Record<
+        string,
+        | string
+        | {
+            types?: string;
+            require?: string;
+            import?: string;
+            development?: string;
+            default?: string;
+          }
+      >;
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
-  bin?: Record<string, string>;
+  peerDependenciesMeta?: Record<string, { optional: boolean }>;
+  resolutions?: Record<string, string>;
+  pnpm?: {
+    overrides?: PackageOverride;
+  };
+  overrides?: PackageOverride;
+  bin?: Record<string, string> | string;
   workspaces?:
     | string[]
     | {
         packages: string[];
       };
+  publishConfig?: Record<string, string>;
+  files?: string[];
 
   // Nx Project Configuration
   nx?: NxProjectPackageJsonConfiguration;
@@ -61,14 +87,30 @@ export interface PackageJson {
   executors?: string;
   'nx-migrations'?: string | NxMigrationsConfiguration;
   'ng-update'?: string | NxMigrationsConfiguration;
+  packageManager?: string;
+  description?: string;
+  keywords?: string[];
+}
+
+export function normalizePackageGroup(
+  packageGroup: PackageGroup
+): ArrayPackageGroup {
+  return Array.isArray(packageGroup)
+    ? packageGroup.map((x) =>
+        typeof x === 'string' ? { package: x, version: '*' } : x
+      )
+    : Object.entries(packageGroup).map(([pkg, version]) => ({
+        package: pkg,
+        version,
+      }));
 }
 
 export function readNxMigrateConfig(
   json: Partial<PackageJson>
-): NxMigrationsConfiguration {
+): NxMigrationsConfiguration & { packageGroup?: ArrayPackageGroup } {
   const parseNxMigrationsConfig = (
     fromJson?: string | NxMigrationsConfiguration
-  ): NxMigrationsConfiguration => {
+  ): NxMigrationsConfiguration & { packageGroup?: ArrayPackageGroup } => {
     if (!fromJson) {
       return {};
     }
@@ -78,7 +120,9 @@ export function readNxMigrateConfig(
 
     return {
       ...(fromJson.migrations ? { migrations: fromJson.migrations } : {}),
-      ...(fromJson.packageGroup ? { packageGroup: fromJson.packageGroup } : {}),
+      ...(fromJson.packageGroup
+        ? { packageGroup: normalizePackageGroup(fromJson.packageGroup) }
+        : {}),
     };
   };
 
@@ -92,18 +136,98 @@ export function readNxMigrateConfig(
 
 export function buildTargetFromScript(
   script: string,
-  nx: NxProjectPackageJsonConfiguration
-) {
-  const nxTargetConfiguration = nx?.targets?.[script] || {};
-
+  scripts: Record<string, string> = {},
+  packageManagerCommand: PackageManagerCommands
+): TargetConfiguration {
   return {
-    ...nxTargetConfiguration,
     executor: 'nx:run-script',
     options: {
-      ...(nxTargetConfiguration.options || {}),
       script,
     },
+    metadata: {
+      scriptContent: scripts[script],
+      runCommand: packageManagerCommand.run(script),
+    },
   };
+}
+
+let packageManagerCommand: PackageManagerCommands | undefined;
+
+export function getMetadataFromPackageJson(
+  packageJson: PackageJson,
+  isInPackageManagerWorkspaces: boolean
+): ProjectMetadata {
+  const { scripts, nx, description, name, exports, main } = packageJson;
+  const includedScripts = nx?.includedScripts || Object.keys(scripts ?? {});
+  return {
+    targetGroups: {
+      ...(includedScripts.length ? { 'NPM Scripts': includedScripts } : {}),
+    },
+    description,
+    js: {
+      packageName: name,
+      packageExports: exports,
+      packageMain: main,
+      isInPackageManagerWorkspaces,
+    },
+  };
+}
+
+export function getTagsFromPackageJson(packageJson: PackageJson): string[] {
+  const tags = packageJson.private ? ['npm:private'] : ['npm:public'];
+  if (packageJson.keywords?.length) {
+    tags.push(...packageJson.keywords.map((k) => `npm:${k}`));
+  }
+  if (packageJson?.nx?.tags?.length) {
+    tags.push(...packageJson?.nx.tags);
+  }
+  return tags;
+}
+
+export function readTargetsFromPackageJson(
+  packageJson: PackageJson,
+  nxJson: NxJsonConfiguration
+) {
+  const { scripts, nx, private: isPrivate } = packageJson ?? {};
+  const res: Record<string, TargetConfiguration> = {};
+  const includedScripts = nx?.includedScripts || Object.keys(scripts ?? {});
+  for (const script of includedScripts) {
+    packageManagerCommand ??= getPackageManagerCommand();
+    res[script] = buildTargetFromScript(script, scripts, packageManagerCommand);
+  }
+  for (const targetName in nx?.targets) {
+    res[targetName] = mergeTargetConfigurations(
+      nx?.targets[targetName],
+      res[targetName]
+    );
+  }
+
+  /**
+   * Add implicit nx-release-publish target for all package.json files that are
+   * not marked as `"private": true` to allow for lightweight configuration for
+   * package based repos.
+   *
+   * Any targetDefaults for the nx-release-publish target set by the user should
+   * be merged with the implicit target.
+   */
+  if (!isPrivate && !res['nx-release-publish']) {
+    const nxReleasePublishTargetDefaults =
+      nxJson?.targetDefaults?.['nx-release-publish'] ?? {};
+    res['nx-release-publish'] = {
+      executor: '@nx/js:release-publish',
+      ...nxReleasePublishTargetDefaults,
+      dependsOn: [
+        // For maximum correctness, projects should only ever be published once their dependencies are successfully published
+        '^nx-release-publish',
+        ...(nxReleasePublishTargetDefaults.dependsOn ?? []),
+      ],
+      options: {
+        ...(nxReleasePublishTargetDefaults.options ?? {}),
+      },
+    };
+  }
+
+  return res;
 }
 
 /**
@@ -115,7 +239,7 @@ export function buildTargetFromScript(
  */
 export function readModulePackageJsonWithoutFallbacks(
   moduleSpecifier: string,
-  requirePaths = [workspaceRoot]
+  requirePaths = getNxRequirePaths()
 ): {
   packageJson: PackageJson;
   path: string;
@@ -150,7 +274,7 @@ export function readModulePackageJsonWithoutFallbacks(
  */
 export function readModulePackageJson(
   moduleSpecifier: string,
-  requirePaths = [workspaceRoot]
+  requirePaths = getNxRequirePaths()
 ): {
   packageJson: PackageJson;
   path: string;

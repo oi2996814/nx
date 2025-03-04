@@ -1,9 +1,10 @@
-import { Linter } from '@nrwl/linter';
-import { E2eTestRunner, UnitTestRunner } from '../../utils/test-runners';
+import type { Linter, LinterType } from '@nx/eslint';
+import type { E2eTestRunner, UnitTestRunner } from '../../utils/test-runners';
 import type { Styles } from '../utils/types';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   host?: string;
   port?: number;
   setParserOptionsProject?: boolean;
@@ -12,9 +13,8 @@ export interface Schema {
   prefix?: string;
   style?: Styles;
   skipTests?: boolean;
-  directory?: string;
   tags?: string;
-  linter?: Linter;
+  linter?: Linter | LinterType;
   unitTestRunner?: UnitTestRunner;
   e2eTestRunner?: E2eTestRunner;
   backendProject?: string;
@@ -25,4 +25,7 @@ export interface Schema {
   viewEncapsulation?: 'Emulated' | 'Native' | 'None';
   skipFormat?: boolean;
   standalone?: boolean;
+  ssr?: boolean;
+  serverRouting?: boolean;
+  typescriptConfiguration?: boolean;
 }

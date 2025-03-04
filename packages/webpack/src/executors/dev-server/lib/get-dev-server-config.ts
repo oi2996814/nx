@@ -1,68 +1,14 @@
-import { ExecutorContext, logger } from '@nrwl/devkit';
-import type { Configuration as WebpackConfiguration } from 'webpack';
+import { logger } from '@nx/devkit';
 import type { Configuration as WebpackDevServerConfiguration } from 'webpack-dev-server';
 import * as path from 'path';
-import { basename, resolve } from 'path';
-
-import { getWebpackConfig } from '../../webpack/lib/get-webpack-config';
+import { readFileSync } from 'fs';
 import { WebDevServerOptions } from '../schema';
 import { buildServePath } from './serve-path';
-import { readFileSync } from 'fs-extra';
-import { generateEntryPoints } from '../../../utils//webpack/package-chunk-sort';
-import { IndexHtmlWebpackPlugin } from '../../../utils/webpack/plugins/index-html-webpack-plugin';
 import { NormalizedWebpackExecutorOptions } from '../../webpack/schema';
 
-export function getDevServerConfig(
-  context: ExecutorContext,
-  buildOptions: NormalizedWebpackExecutorOptions,
-  serveOptions: WebDevServerOptions
-): Partial<WebpackConfiguration> {
-  const workspaceRoot = context.root;
-  const { root: projectRoot, sourceRoot } =
-    context.workspace.projects[context.projectName];
-  const webpackConfig = getWebpackConfig(
-    context,
-    buildOptions,
-    true,
-    typeof buildOptions.optimization === 'boolean'
-      ? buildOptions.optimization
-      : buildOptions.optimization?.scripts
-  );
-
-  (webpackConfig as any).devServer = getDevServerPartial(
-    workspaceRoot,
-    serveOptions,
-    buildOptions
-  );
-
-  const {
-    deployUrl,
-    subresourceIntegrity,
-    scripts = [],
-    styles = [],
-    index,
-    baseHref,
-  } = buildOptions;
-
-  webpackConfig.plugins.push(
-    new IndexHtmlWebpackPlugin({
-      indexPath: resolve(workspaceRoot, index),
-      outputPath: basename(index),
-      baseHref,
-      entrypoints: generateEntryPoints({ scripts, styles }),
-      deployUrl,
-      sri: subresourceIntegrity,
-      moduleEntrypoints: [],
-      noModuleEntrypoints: ['polyfills-es5'],
-    })
-  );
-
-  return webpackConfig as WebpackConfiguration;
-}
-
-function getDevServerPartial(
+export function getDevServerOptions(
   root: string,
-  options: WebDevServerOptions,
+  serveOptions: WebDevServerOptions,
   buildOptions: NormalizedWebpackExecutorOptions
 ): WebpackDevServerConfiguration {
   const servePath = buildServePath(buildOptions);
@@ -79,24 +25,28 @@ function getDevServerPartial(
   }
 
   const config: WebpackDevServerConfiguration = {
-    host: options.host,
-    port: options.port,
+    host: serveOptions.host,
+    port: serveOptions.port,
     headers: { 'Access-Control-Allow-Origin': '*' },
     historyApiFallback: {
-      index: `${servePath}${path.basename(buildOptions.index)}`,
+      index:
+        buildOptions.index &&
+        `${servePath}${path.basename(buildOptions.index)}`,
       disableDotRule: true,
       htmlAcceptHeaders: ['text/html', 'application/xhtml+xml'],
     },
     onListening(server: any) {
+      const isHttps =
+        server.options.https || server.options.server?.type === 'https';
       logger.info(
         `NX Web Development Server is listening at ${
-          server.options.https ? 'https' : 'http'
+          isHttps ? 'https' : 'http'
         }://${server.options.host}:${server.options.port}${buildServePath(
           buildOptions
         )}`
       );
     },
-    open: options.open,
+    open: serveOptions.open,
     static: false,
     compress: scriptsOptimization || stylesOptimization,
     devMiddleware: {
@@ -104,31 +54,31 @@ function getDevServerPartial(
       stats: false,
     },
     client: {
-      webSocketURL: options.publicHost,
+      webSocketURL: serveOptions.publicHost,
       overlay: {
         errors: !(scriptsOptimization || stylesOptimization),
         warnings: false,
       },
     },
-    liveReload: options.hmr ? false : options.liveReload, // disable liveReload if hmr is enabled
-    hot: options.hmr,
+    liveReload: serveOptions.hmr ? false : serveOptions.liveReload, // disable liveReload if hmr is enabled
+    hot: serveOptions.hmr,
   };
 
-  if (options.ssl) {
+  if (serveOptions.ssl) {
     config.server = {
       type: 'https',
     };
-    if (options.sslKey && options.sslCert) {
-      config.server.options = getSslConfig(root, options);
+    if (serveOptions.sslKey && serveOptions.sslCert) {
+      config.server.options = getSslConfig(root, serveOptions);
     }
   }
 
-  if (options.proxyConfig) {
-    config.proxy = getProxyConfig(root, options);
+  if (serveOptions.proxyConfig) {
+    config.proxy = getProxyConfig(root, serveOptions);
   }
 
-  if (options.allowedHosts) {
-    config.allowedHosts = options.allowedHosts.split(',');
+  if (serveOptions.allowedHosts) {
+    config.allowedHosts = serveOptions.allowedHosts.split(',');
   }
 
   return config;

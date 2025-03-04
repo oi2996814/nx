@@ -1,11 +1,10 @@
+/* eslint-disable @nx/enforce-module-boundaries */
 // nx-ignore-next-line
-import type { DepGraphClientResponse } from 'nx/src/command-line/dep-graph';
-
-export interface ProjectGraphList {
-  id: string;
-  label: string;
-  url: string;
-}
+import type {
+  ProjectGraphClientResponse,
+  TaskGraphClientResponse,
+} from 'nx/src/command-line/graph/graph';
+/* eslint-enable @nx/enforce-module-boundaries */
 
 export interface WorkspaceLayout {
   libsDir: string;
@@ -14,15 +13,28 @@ export interface WorkspaceLayout {
 
 export interface ProjectGraphService {
   getHash: () => Promise<string>;
-  getProjectGraph: (url: string) => Promise<DepGraphClientResponse>;
+  getProjectGraph: (url: string) => Promise<ProjectGraphClientResponse>;
+  getTaskGraph: (url: string) => Promise<TaskGraphClientResponse>;
+  setTaskInputsUrl?: (url: string) => void;
+  getExpandedTaskInputs?: (taskId: string) => Promise<Record<string, string[]>>;
+  getSourceMaps?: (
+    url: string
+  ) => Promise<Record<string, Record<string, string[]>>>;
 }
+
 export interface Environment {
   environment: 'dev' | 'watch' | 'release';
 }
 
-export interface AppConfig {
-  showDebugger: boolean;
-  showExperimentalFeatures: boolean;
-  projectGraphs: ProjectGraphList[];
-  defaultProjectGraph: string;
+export interface GraphPerfReport {
+  renderTime: number;
+  numNodes: number;
+  numEdges: number;
+}
+
+export interface CompositeNode {
+  id: string;
+  label: string;
+  state: 'expanded' | 'collapsed' | 'hidden';
+  parent?: string;
 }

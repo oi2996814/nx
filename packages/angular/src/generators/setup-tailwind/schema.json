@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "NxAngularTailwindSetupGenerator",
   "cli": "nx",
   "title": "Configures Tailwind CSS for an application or a buildable/publishable library.",
@@ -22,7 +22,8 @@
     },
     "skipFormat": {
       "type": "boolean",
-      "description": "Skips formatting the workspace after the generator completes."
+      "description": "Skips formatting the workspace after the generator completes.",
+      "x-priority": "internal"
     },
     "stylesEntryPoint": {
       "type": "string",
@@ -31,9 +32,11 @@
     "skipPackageJson": {
       "type": "boolean",
       "default": false,
-      "description": "Do not add dependencies to `package.json`."
+      "description": "Do not add dependencies to `package.json`.",
+      "x-priority": "internal"
     }
   },
   "additionalProperties": false,
-  "required": ["project"]
+  "required": ["project"],
+  "examplesFile": "../../../docs/setup-tailwind-examples.md"
 }

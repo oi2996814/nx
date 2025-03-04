@@ -1,7 +1,7 @@
-import { Tree } from 'nx/src/generators/tree';
 import { relative } from 'path';
 import { visitNotIgnoredFiles } from '../generators/visit-not-ignored-files';
-import { normalizePath } from 'nx/src/utils/path';
+
+import { normalizePath, Tree } from 'nx/src/devkit-exports';
 
 /**
  * Analogous to cp -r oldDir newDir

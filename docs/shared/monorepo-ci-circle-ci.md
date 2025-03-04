@@ -1,93 +1,49 @@
-# Configuring CI Using CircleCI and Nx
+---
+title: Configuring CI Using Circle CI and Nx
+description: Learn how to set up Circle CI for your Nx workspace using the Nx Orb to track successful builds, run affected commands, and optimize CI performance.
+---
 
-The `CircleCI` can track the last successful run on `main` branch and use this as a reference point for the `BASE`. The `Nx Orb` provides convenient implementation of this functionality which you can drop into you existing CI config.
-To understand why knowing the last successful build is important for the affected command, check out the [in-depth explanation at Orb's docs](https://github.com/nrwl/nx-orb#background).
+# Configuring CI Using Circle CI and Nx
 
-Below is an example of a Circle CI setup for an Nx workspace only building and testing what is affected. For more details on how the orb is used, head over to the [official docs](https://circleci.com/developer/orbs/orb/nrwl/nx).
+Below is an example of a Circle CI setup, building, and testing only what is affected.
 
-```yaml
+```yaml {% fileName=".circleci/config.yml" %}
 version: 2.1
+
 orbs:
-  nx: nrwl/nx@1.5.1
+  nx: nrwl/nx@1.6.2
+
 jobs:
   main:
     docker:
       - image: cimg/node:lts-browsers
     steps:
       - checkout
+      # This line enables distribution
+      # The "--stop-agents-after" is optional, but allows idle agents to shut down once the "e2e-ci" targets have been requested
+      # - run: npx nx-cloud start-ci-run --distribute-on="3 linux-medium-js" --stop-agents-after="e2e-ci"
       - run: npm ci
+
       - nx/set-shas
 
-      - run: npx nx workspace-lint
-      - run: npx nx format:check
-      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD --target=lint --parallel=3
-      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD --target=test --parallel=3 --ci --code-coverage
-      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD --target=build --parallel=3
+      - run: npx nx-cloud record -- nx format:check
+      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD -t lint test build e2e-ci
 workflows:
   build:
     jobs:
       - main
 ```
 
-The `pr` and `main` jobs implement the CI workflow.
+### Get the Commit of the Last Successful Build
 
-### Using CircleCI on private repository
+`CircleCI` can track the last successful run on the `main` branch and use this as a reference point for the `BASE`. The [Nx Orb](https://github.com/nrwl/nx-orb) provides a convenient implementation of this functionality, which you can drop into your existing CI workflow. Specifically, for push commits, `nx/set-shas` populates the `$NX_BASE` environment variable with the commit SHA of the last successful run.
 
-To use the [Nx Orb](https://github.com/nrwl/nx-orb) with a private repository on your main branch, you need to grant the orb access to your CircleCI API. You can do this by creating an environment variable called `CIRCLE_API_TOKEN` in the context or the project.
+To understand why knowing the last successful build is important for the affected command, check out the [in-depth explanation in Orb's docs](https://github.com/nrwl/nx-orb#background).
+
+### Using CircleCI in a private repository
+
+To use the [Nx Orb](https://github.com/nrwl/nx-orb) with a private repository on your main branch, you need to grant the orb access to your CircleCI API. Create an environment variable called `CIRCLE_API_TOKEN` in the context of the project.
 
 {% callout type="warning" title="Caution" %}
-It should be a user token, not project token.
+It should be a user token, not the project token.
 {% /callout %}
-
-{% nx-cloud-section %}
-
-## Distributed CI with Nx Cloud
-
-In order to use distributed task execution, we need to start agents and set the `NX_CLOUD_DISTRIBUTED_EXECUTION` flag to `true`.
-
-Read more about the [Distributed CI setup with Nx Cloud](/recipes/ci-setup#distributed-ci-with-nx-cloud).
-
-```yaml
-version: 2.1
-orbs:
-  nx: nrwl/nx@1.5.1
-jobs:
-  agent:
-    docker:
-      - image: cimg/node:lts-browsers
-    parameters:
-      ordinal:
-        type: integer
-    steps:
-      - checkout
-      - run: npm ci
-      - run:
-          command: npx nx-cloud start-agent
-          no_output_timeout: 60m
-  main:
-    docker:
-      - image: cimg/node:lts-browsers
-    steps:
-      - checkout
-      - run: npm ci
-      - nx/set-shas
-      - run: npx nx-cloud start-ci-run --stop-agents-after="build"
-
-      - run: npx nx-cloud record -- npx nx workspace-lint
-      - run: npx nx-cloud record -- npx nx format:check
-      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD --target=lint --parallel=3
-      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD --target=test --parallel=3 --ci --code-coverage
-      - run: npx nx affected --base=$NX_BASE --head=$NX_HEAD --target=build --parallel=3
-workflows:
-  build:
-    jobs:
-      - agent:
-          matrix:
-            parameters:
-              ordinal: [1, 2, 3]
-      - main
-```
-
-You can also use our [ci-workflow generator](/packages/workspace/generators/ci-workflow) to generate the configuration file.
-
-{% /nx-cloud-section %}

@@ -1,5 +1,4 @@
-export { cypressProjectGenerator } from './src/generators/cypress-project/cypress-project';
+export { configurationGenerator } from './src/generators/configuration/configuration';
+export { componentConfigurationGenerator } from './src/generators/component-configuration/component-configuration';
 export { cypressInitGenerator } from './src/generators/init/init';
-export { conversionGenerator } from './src/generators/convert-tslint-to-eslint/convert-tslint-to-eslint';
-export { cypressComponentProject } from './src/generators/cypress-component-project/cypress-component-project';
-export { migrateCypressProject } from './src/generators/migrate-to-cypress-ten/migrate-to-cypress-ten';
+export { migrateCypressProject } from './src/generators/migrate-to-cypress-11/migrate-to-cypress-11';

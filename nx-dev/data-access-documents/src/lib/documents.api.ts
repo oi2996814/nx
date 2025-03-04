@@ -1,300 +1,219 @@
-import { DocumentData, DocumentMetadata } from '@nrwl/nx-dev/models-document';
-import { MenuItem } from '@nrwl/nx-dev/models-menu';
-import { parseMarkdown } from '@nrwl/nx-dev/ui-markdoc';
+import {
+  DocumentMetadata,
+  ProcessedDocument,
+  RelatedDocument,
+} from '@nx/nx-dev/models-document';
 import { readFileSync } from 'fs';
-import { load as yamlLoad } from 'js-yaml';
 import { join } from 'path';
-import { extractTitle } from './documents.utils';
+import { TagsApi } from './tags.api';
 
-export interface StaticDocumentPaths {
+interface StaticDocumentPaths {
   params: { segments: string[] };
 }
 
 export class DocumentsApi {
-  private documents: DocumentMetadata;
+  private readonly manifest: Record<string, DocumentMetadata>;
+
   constructor(
     private readonly options: {
+      id: string;
+      manifest: Record<string, DocumentMetadata>;
+      prefix: string;
       publicDocsRoot: string;
-      documentSources: DocumentMetadata[];
-      addAncestor: { id: string; name: string } | null;
+      tagsApi: TagsApi;
     }
   ) {
+    if (!options.id) {
+      throw new Error('id cannot be undefined');
+    }
+    if (!options.prefix) {
+      options.prefix = '';
+    }
     if (!options.publicDocsRoot) {
       throw new Error('public docs root cannot be undefined');
     }
-    if (!options.documentSources) {
+    if (!options.manifest) {
       throw new Error('public document sources cannot be undefined');
     }
 
-    const itemList: DocumentMetadata[] = options.documentSources.flatMap(
-      (x) => x.itemList
-    ) as DocumentMetadata[];
-
-    this.documents = {
-      id: 'documents',
-      name: 'documents',
-      itemList: !!this.options.addAncestor
-        ? [
-            {
-              id: this.options.addAncestor.id,
-              name: this.options.addAncestor.name,
-              itemList,
-            },
-          ]
-        : itemList,
-    };
-    // this.allDocuments = options.allDocuments;
+    this.manifest = structuredClone(this.options.manifest);
+  }
+  private getManifestKey(path: string): string {
+    return '/' + path;
   }
 
-  /**
-   * Generate the content of a "Category" or "Index" page, listing all its direct items.
-   * @param path
-   */
-  getDocumentIndex(path: string[]): DocumentData | null {
-    let items = this.documents?.itemList;
-    let found: DocumentMetadata | null = null;
-    let itemPathToValidate: string[] = [];
+  getFilePath(path: string): string {
+    return join(this.options.publicDocsRoot, `${path}.md`);
+  }
 
-    for (const part of path) {
-      found = items?.find((item) => item.id === part) || null;
-      if (found) {
-        itemPathToValidate.push(found.id);
-        items = found.itemList;
+  getParamsStaticDocumentPaths(): StaticDocumentPaths[] {
+    return Object.keys(this.manifest).map((path) => ({
+      params: {
+        segments: !!this.options.prefix
+          ? [this.options.prefix].concat(path.split('/').filter(Boolean).flat())
+          : path.split('/').filter(Boolean).flat(),
+      },
+    }));
+  }
+  getSlugsStaticDocumentPaths(): string[] {
+    if (this.options.prefix)
+      return Object.keys(this.manifest).map(
+        (path) => `/${this.options.prefix}` + path
+      );
+    return Object.keys(this.manifest);
+  }
+
+  getDocument(path: string[]): ProcessedDocument {
+    const document: DocumentMetadata | null =
+      this.manifest[this.getManifestKey(path.join('/'))] || null;
+
+    if (!document) {
+      if (
+        path[0] === 'nx-api' &&
+        path[1] === 'devkit' &&
+        path[2] === 'documents'
+      ) {
+        const file = `generated/devkit/${path.slice(3).join('/')}`;
+        return {
+          content: readFileSync(this.getFilePath(file), 'utf8'),
+          description: '',
+          filePath: this.getFilePath(file),
+          id: path.at(-1) || '',
+          name: path.at(-1) || '',
+          relatedDocuments: {},
+          tags: [],
+        };
       }
+      throw new Error(
+        `Document not found in manifest with: "${path.join('/')}"`
+      );
     }
+    if (this.isDocumentIndex(document)) return this.getDocumentIndex(path);
+    return {
+      content: readFileSync(this.getFilePath(document.file), 'utf8'),
+      description: document.description,
+      filePath: this.getFilePath(document.file),
+      id: document.id,
+      name: document.name,
+      mediaImage: document.mediaImage || '',
+      relatedDocuments: this.getRelatedDocuments(document.tags),
+      parentDocuments: path.map((segment, index): RelatedDocument => {
+        const parentPath = path.slice(0, index + 1).join('/');
+        const parentDocument =
+          this.manifest[this.getManifestKey(parentPath)] || null;
+        if (!parentDocument) {
+          return {
+            id: segment,
+            name: '',
+            description: '',
+            file: '',
+            path: '/' + path.slice(0, index + 1).join('/'),
+          };
+        }
+        return {
+          id: parentDocument.id,
+          name: parentDocument.name,
+          description: parentDocument.description,
+          file: parentDocument.file,
+          path: parentDocument.path,
+        };
+      }),
+      tags: document.tags,
+    };
+  }
 
-    // If the ids have found the item, check that the segment correspond to the id tree
-    if (found && path.join('/') !== itemPathToValidate.join('/')) {
-      found = null;
-    }
+  getRelatedDocuments(tags: string[]): Record<string, RelatedDocument[]> {
+    const relatedDocuments = {};
+    tags.forEach(
+      (tag) =>
+        (relatedDocuments[tag] = this.options.tagsApi.getAssociatedItems(tag))
+    );
 
-    if (!found) return null;
+    return relatedDocuments;
+  }
 
-    const cardsTemplate = items
-      ?.map((i) => ({
+  isDocumentIndex(document: DocumentMetadata): boolean {
+    return !!document.itemList.length;
+  }
+  generateDocumentIndexTemplate(document: DocumentMetadata): string {
+    const cardsTemplate = document.itemList
+      .map((i) => ({
         title: i.name,
         description: i.description ?? '',
-        url: i.path ?? '/' + path.concat(i.id).join('/'),
+        url: i.path,
       }))
       .map(
         (card) =>
-          `{% card title="${card.title}" description="${card.description}" url="${card.url}" /%}\n`
+          `{% card title="${card.title}" description="${
+            card.description
+          }" url="${[this.options.prefix, card.url]
+            .filter(Boolean)
+            .join('/')}" /%}\n`
       )
       .join('');
+    return [
+      `# ${document.name}\n\n ${document.description ?? ''}\n\n`,
+      '{% cards %}\n',
+      cardsTemplate,
+      '{% /cards %}\n\n',
+    ].join('');
+  }
+  getDocumentIndex(path: string[]): ProcessedDocument {
+    const document: DocumentMetadata | null =
+      this.manifest[this.getManifestKey(path.join('/'))] || null;
+
+    if (!document)
+      throw new Error(
+        `Document not found in manifest with: "${path.join('/')}"`
+      );
+
+    if (!!document.file)
+      return {
+        content: readFileSync(this.getFilePath(document.file), 'utf8'),
+        description: document.description,
+        filePath: this.getFilePath(document.file),
+        id: document.id,
+        name: document.name,
+        relatedDocuments: this.getRelatedDocuments(document.tags),
+        tags: document.tags,
+      };
 
     return {
+      content: this.generateDocumentIndexTemplate(document),
+      description: document.description,
       filePath: '',
-      data: {
-        title: found?.name,
-      },
-      content: [
-        `# ${found?.name}\n\n ${found?.description ?? ''}\n\n`,
-        '{% cards %}\n',
-        cardsTemplate,
-        '{% /cards %}\n\n',
-      ].join(''),
+      id: document.id,
+      name: document.name,
+      relatedDocuments: this.getRelatedDocuments(document.tags),
+      tags: document.tags,
     };
   }
 
-  /**
-   * Retrieve content from an existing markdown file using the `file` property.
-   * @param path
-   */
-  getDocument(path: string[]): DocumentData {
-    const { filePath, tags } = this.getDocumentInfo(path);
-
-    const originalContent = readFileSync(filePath, 'utf8');
-    const ast = parseMarkdown(originalContent);
-    const frontmatter = ast.attributes.frontmatter
-      ? yamlLoad(ast.attributes.frontmatter)
-      : {};
-
-    // Set default title if not provided in front-matter section.
-    if (!frontmatter.title) {
-      frontmatter.title =
-        extractTitle(originalContent) ?? path[path.length - 1];
-    }
+  generateRootDocumentIndex(options: {
+    name: string;
+    description: string;
+  }): ProcessedDocument {
+    const document = {
+      id: 'root',
+      name: options.name,
+      description: options.description,
+      file: '',
+      path: '',
+      isExternal: false,
+      itemList: Object.keys(this.manifest)
+        .filter((k) => k.split('/').length < 4) // Getting only top categories
+        .map((k) => this.manifest[k]),
+      tags: [],
+    };
 
     return {
-      filePath,
-      data: frontmatter,
-      content:
-        originalContent + '\n\n' + this.getRelatedDocumentsSection(tags, path),
+      content: this.generateDocumentIndexTemplate(document),
+      description: document.description,
+      filePath: '',
+      id: document.id,
+      name: document.name,
+      relatedDocuments: this.getRelatedDocuments(document.tags),
+      tags: document.tags,
     };
-  }
-
-  getDocuments(): DocumentMetadata {
-    const docs = this.documents;
-    if (docs) return docs;
-    throw new Error(`Cannot find any documents`);
-  }
-
-  getStaticDocumentPaths(): StaticDocumentPaths[] {
-    const paths: StaticDocumentPaths[] = [];
-
-    function recur(curr: DocumentMetadata, acc: string[]): void {
-      if (curr.isExternal) return;
-
-      // Enable addressable category path
-      paths.push({
-        params: {
-          segments: curr.path
-            ? curr.path.split('/').filter(Boolean).flat()
-            : [...acc, curr.id],
-        },
-      });
-      if (curr.itemList) {
-        curr.itemList.forEach((ii) => {
-          recur(ii, [...acc, curr.id]);
-        });
-      }
-    }
-
-    if (!this.documents || !this.documents.itemList)
-      throw new Error(`Can't find any items`);
-    this.documents.itemList.forEach((item) => {
-      recur(item, []);
-    });
-
-    return paths;
-  }
-
-  /**
-   * Getting the document's filePath from the `file` property is done in 2 steps:
-   * - traversing the tree by path segments
-   * - if not found, try searching for it via the complete path string
-   * @param path
-   * @private
-   */
-  private getDocumentInfo(path: string[]): {
-    filePath: string;
-    tags: string[];
-  } {
-    let items = this.documents?.itemList;
-
-    if (!items) {
-      throw new Error(`No document available for lookup`);
-    }
-
-    let found: DocumentMetadata | null = null;
-    let itemPathToValidate: string[] = [];
-    // Traversing the tree by matching item's ids with path's segments
-    for (const part of path) {
-      found = items?.find((item) => item.id === part) || null;
-      if (found) {
-        itemPathToValidate.push(found.id);
-        items = found.itemList;
-      }
-    }
-    // If the ids have found the item, check that the segment correspond to the id tree
-    if (found && path.join('/') !== itemPathToValidate.join('/')) {
-      found = null;
-    }
-
-    // If still not found, then attempt to match any item's id with the current path as a string
-    if (!found) {
-      function recur(curr, acc) {
-        if (curr.itemList) {
-          curr.itemList.forEach((ii) => {
-            recur(ii, [...acc, curr.id]);
-          });
-        } else {
-          if (curr.path === '/' + path.join('/')) {
-            found = curr;
-          }
-        }
-      }
-      this.documents.itemList!.forEach((item) => {
-        recur(item, []);
-      });
-    }
-
-    if (!found) throw new Error(`Document not found`);
-    const makeFilePath = (pathPart: string): string => {
-      return join(this.options.publicDocsRoot, `${pathPart}.md`);
-    };
-    const file = found.file
-      ? { filePath: makeFilePath(found.file), tags: found.tags || [] }
-      : { filePath: makeFilePath(['generated', ...path].join('/')), tags: [] };
-    return file;
-  }
-
-  /**
-   * Displays a list of all concepts, recipes or reference documents that are tagged with the specified tag
-   * Tags are defined in map.json
-   * @returns
-   * @param tags
-   * @param path
-   */
-  private getRelatedDocumentsSection(tags: string[], path: string[]): string {
-    let relatedConcepts: MenuItem[] = [];
-    let relatedRecipes: MenuItem[] = [];
-    let relatedReference: MenuItem[] = [];
-    function recur(curr, acc) {
-      if (curr.itemList) {
-        curr.itemList.forEach((ii) => {
-          recur(ii, [...acc, curr.id]);
-        });
-      } else if (path.join('/') === [...acc, curr.id].join('/')) {
-        return;
-      } else {
-        if (
-          curr.tags &&
-          tags.some((tag) => curr.tags.includes(tag)) &&
-          ['concepts', 'more-concepts'].some((id) => acc.includes(id))
-        ) {
-          curr.path = [...acc, curr.id].join('/');
-          relatedConcepts.push(curr);
-        }
-        if (
-          curr.tags &&
-          tags.some((tag) => curr.tags.includes(tag)) &&
-          acc.includes('recipe')
-        ) {
-          curr.path = [...acc, curr.id].join('/');
-          relatedRecipes.push(curr);
-        }
-        if (
-          curr.tags &&
-          tags.some((tag) => curr.tags.includes(tag)) &&
-          ['nx', 'workspace'].some((id) => acc.includes(id))
-        ) {
-          curr.path = [...acc, curr.id].join('/');
-          relatedReference.push(curr);
-        }
-      }
-    }
-    this.documents.itemList!.forEach((item) => {
-      recur(item, []);
-    });
-
-    if (
-      relatedConcepts.length === 0 &&
-      relatedRecipes.length === 0 &&
-      relatedReference.length === 0
-    ) {
-      return '';
-    }
-
-    let output = '## Related Documentation\n';
-
-    function listify(items: MenuItem[]): string {
-      return items
-        .map((item) => {
-          return `- [${item.name}](${item.path})`;
-        })
-        .join('\n');
-    }
-    if (relatedConcepts.length > 0) {
-      output += '### Concepts\n' + listify(relatedConcepts) + '\n';
-    }
-    if (relatedRecipes.length > 0) {
-      output += '### Recipes\n' + listify(relatedRecipes) + '\n';
-    }
-    if (relatedReference.length > 0) {
-      output += '### Reference\n' + listify(relatedReference) + '\n';
-    }
-
-    return output;
   }
 }

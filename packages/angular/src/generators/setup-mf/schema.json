@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "GeneratorAngularMFSetup",
   "cli": "nx",
   "title": "Generate Module Federation Setup for Angular App",
@@ -34,24 +34,29 @@
     },
     "remotes": {
       "type": "array",
-      "description": "A list of remote application names that the host application should consume."
+      "description": "A list of remote application names that the Consumer (host) application should consume.",
+      "alias": "producers"
     },
     "host": {
       "type": "string",
-      "description": "The name of the host application that the remote application will be consumed by."
+      "description": "The name of the host application that the remote application will be consumed by.",
+      "alias": "consumer"
     },
     "routing": {
       "type": "boolean",
-      "description": "Generate a routing setup to allow a host application to route to the remote application."
+      "description": "Generate a routing setup to allow a Consumer (host) application to route to the Producer (remote) application.",
+      "x-priority": "important"
     },
     "skipFormat": {
       "type": "boolean",
-      "description": "Skip formatting the workspace after the generator completes."
+      "description": "Skip formatting the workspace after the generator completes.",
+      "x-priority": "internal"
     },
     "skipPackageJson": {
       "type": "boolean",
       "default": false,
-      "description": "Do not add dependencies to `package.json`."
+      "description": "Do not add dependencies to `package.json`.",
+      "x-priority": "internal"
     },
     "skipE2E": {
       "type": "boolean",
@@ -69,9 +74,20 @@
     "standalone": {
       "type": "boolean",
       "description": "Whether the application is a standalone application.",
+      "default": true
+    },
+    "typescriptConfiguration": {
+      "type": "boolean",
+      "description": "Whether the module federation configuration and webpack configuration files should use TS.",
+      "default": true
+    },
+    "setParserOptionsProject": {
+      "type": "boolean",
+      "description": "Whether or not to configure the ESLint `parserOptions.project` option. We do not do this by default for lint performance reasons.",
       "default": false
     }
   },
   "required": ["appName", "mfType"],
-  "additionalProperties": false
+  "additionalProperties": false,
+  "examplesFile": "../../../docs/setup-mf-examples.md"
 }
