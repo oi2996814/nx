@@ -1,39 +1,37 @@
-import type { GeneratorCallback, Tree } from '@nrwl/devkit';
-import { formatFiles } from '@nrwl/devkit';
+import type { GeneratorCallback, Tree } from '@nx/devkit';
+import { formatFiles } from '@nx/devkit';
 import {
   addExportsToBarrel,
   addImportsToModule,
   addNgRxToPackageJson,
   generateNgrxFilesFromTemplates,
   normalizeOptions,
+  validateOptions,
 } from './lib';
 import type { NgRxGeneratorOptions } from './schema';
 
 export async function ngrxGenerator(
   tree: Tree,
-  options: NgRxGeneratorOptions
+  schema: NgRxGeneratorOptions
 ): Promise<GeneratorCallback> {
-  const normalizedOptions = normalizeOptions(options);
+  validateOptions(tree, schema);
+  const options = normalizeOptions(tree, schema);
 
-  if (!tree.exists(normalizedOptions.module)) {
-    throw new Error(`Module does not exist: ${normalizedOptions.module}.`);
+  if (!options.minimal || !options.root) {
+    generateNgrxFilesFromTemplates(tree, options);
   }
 
-  if (!normalizedOptions.minimal || !normalizedOptions.root) {
-    generateNgrxFilesFromTemplates(tree, normalizedOptions);
-  }
-
-  if (!normalizedOptions.skipImport) {
-    addImportsToModule(tree, normalizedOptions);
-    addExportsToBarrel(tree, normalizedOptions);
+  if (!options.skipImport) {
+    addImportsToModule(tree, options);
+    addExportsToBarrel(tree, options);
   }
 
   let packageInstallationTask: GeneratorCallback = () => {};
-  if (!normalizedOptions.skipPackageJson) {
-    packageInstallationTask = addNgRxToPackageJson(tree);
+  if (!options.skipPackageJson) {
+    packageInstallationTask = addNgRxToPackageJson(tree, options);
   }
 
-  if (!normalizedOptions.skipFormat) {
+  if (!options.skipFormat) {
     await formatFiles(tree);
   }
 

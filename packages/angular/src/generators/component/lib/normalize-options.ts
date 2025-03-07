@@ -1,44 +1,62 @@
-import type { Tree } from '@nrwl/devkit';
-import {
-  joinPathFragments,
-  readProjectConfiguration,
-  readWorkspaceConfiguration,
-} from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import { names, readProjectConfiguration } from '@nx/devkit';
+import { determineArtifactNameAndDirectoryOptions } from '@nx/devkit/src/generators/artifact-name-and-directory-utils';
+import type { AngularProjectConfiguration } from '../../../utils/types';
+import { buildSelector, validateHtmlSelector } from '../../utils/selector';
+import { validateClassName } from '../../utils/validations';
 import type { NormalizedSchema, Schema } from '../schema';
-import { getProjectNameFromDirPath } from 'nx/src/utils/project-graph-utils';
 
-function getProjectFromPath(path: string) {
-  try {
-    return getProjectNameFromDirPath(path);
-  } catch {
-    return null;
-  }
-}
-
-export function normalizeOptions(
+export async function normalizeOptions(
   tree: Tree,
   options: Schema
-): NormalizedSchema {
-  const project =
-    options.project ??
-    getProjectFromPath(options.path) ??
-    readWorkspaceConfiguration(tree).defaultProject;
-  const { projectType, root, sourceRoot } = readProjectConfiguration(
-    tree,
-    project
-  );
-  const projectSourceRoot = sourceRoot ?? joinPathFragments(root, 'src');
-  const path =
-    options.path ??
-    joinPathFragments(
-      projectSourceRoot,
-      projectType === 'application' ? 'app' : 'lib'
+): Promise<NormalizedSchema> {
+  options.type ??= 'component';
+  const {
+    artifactName: name,
+    directory,
+    fileName,
+    filePath,
+    project: projectName,
+  } = await determineArtifactNameAndDirectoryOptions(tree, {
+    name: options.name,
+    path: options.path,
+    suffix: options.type ?? 'component',
+    allowedFileExtensions: ['ts'],
+    fileExtension: 'ts',
+  });
+  if (name.includes('/')) {
+    throw new Error(
+      `The component name '${name}' cannot contain a slash as it must be a valid JS symbol. Please use a different name.`
     );
+  }
+
+  const { className } = names(name);
+  const { className: suffixClassName } = names(options.type);
+  const symbolName = `${className}${suffixClassName}`;
+  validateClassName(symbolName);
+
+  const { prefix, root, sourceRoot } = readProjectConfiguration(
+    tree,
+    projectName
+  ) as AngularProjectConfiguration;
+
+  const selector =
+    options.selector ?? buildSelector(name, options.prefix, prefix, 'fileName');
+  validateHtmlSelector(selector);
 
   return {
     ...options,
-    path,
-    project,
-    projectSourceRoot,
+    name,
+    projectName,
+    changeDetection: options.changeDetection ?? 'Default',
+    style: options.style ?? 'css',
+    standalone: options.standalone ?? true,
+    directory,
+    fileName,
+    filePath,
+    symbolName,
+    projectSourceRoot: sourceRoot,
+    projectRoot: root,
+    selector,
   };
 }

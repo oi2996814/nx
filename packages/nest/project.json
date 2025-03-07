@@ -1,23 +1,12 @@
 {
+  "name": "nest",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/nest",
   "projectType": "library",
   "targets": {
-    "test": {
-      "executor": "@nrwl/jest:jest",
-      "options": {
-        "jestConfig": "packages/nest/jest.config.ts",
-        "passWithNoTests": true
-      },
-      "outputs": ["coverage/packages/nest"]
-    },
     "build-base": {
-      "executor": "@nrwl/js:tsc",
+      "executor": "@nx/js:tsc",
       "options": {
-        "outputPath": "build/packages/nest",
-        "tsConfig": "packages/nest/tsconfig.lib.json",
-        "main": "packages/nest/index.ts",
-        "updateBuildableProjectDepsInPackageJson": false,
         "assets": [
           {
             "input": "packages/nest",
@@ -52,36 +41,15 @@
             "output": "/"
           }
         ]
-      },
-      "outputs": ["{options.outputPath}"]
+      }
     },
     "build": {
       "executor": "nx:run-commands",
-      "outputs": ["build/packages/nest"],
+      "outputs": ["{workspaceRoot}/build/packages/nest"],
       "options": {
         "command": "node ./scripts/copy-readme.js nest"
       }
-    },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "options": {
-        "lintFilePatterns": [
-          "packages/nest/**/*.ts",
-          "packages/nest/**/*.spec.ts",
-          "packages/nest/**/*_spec.ts",
-          "packages/nest/**/*.spec.tsx",
-          "packages/nest/**/*.spec.js",
-          "packages/nest/**/*.spec.jsx",
-          "packages/nest/**/*.d.ts",
-          "packages/nest/**/executors/**/schema.json",
-          "packages/nest/**/generators/**/schema.json",
-          "packages/nest/generators.json",
-          "packages/nest/package.json",
-          "packages/nest/migrations.json"
-        ]
-      },
-      "outputs": ["{options.outputFile}"]
     }
   },
-  "implicitDependencies": ["node", "linter"]
+  "implicitDependencies": ["node", "eslint"]
 }

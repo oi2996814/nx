@@ -1,98 +1,130 @@
-import {
-  ImplicitJsonSubsetDependency,
-  NxJsonConfiguration,
-} from '../config/nx-json';
-import { stripIndents } from './strip-indents';
+import { ProjectConfiguration } from '../config/workspace-json-project-json';
+import { NxJsonConfiguration } from '../config/nx-json';
+import { findMatchingProjects } from './find-matching-projects';
+import { output } from './output';
+import { ProjectGraphProjectNode } from '../config/project-graph';
+import { WorkspaceValidityError } from '../devkit-internals';
 
 export function assertWorkspaceValidity(
-  workspaceJson,
+  projects: Record<string, ProjectConfiguration>,
   nxJson: NxJsonConfiguration
 ) {
-  const workspaceJsonProjects = Object.keys(workspaceJson.projects);
-
-  const projects = {
-    ...workspaceJson.projects,
-  };
+  const projectNames = Object.keys(projects);
+  const projectGraphNodes = projectNames.reduce((graph, project) => {
+    const projectConfiguration = projects[project];
+    graph[project] = {
+      name: project,
+      type: projectConfiguration.projectType === 'library' ? 'lib' : 'app', // missing fallback to `e2e`
+      data: {
+        ...projectConfiguration,
+      },
+    };
+    return graph;
+  }, {} as Record<string, ProjectGraphProjectNode>);
 
   const invalidImplicitDependencies = new Map<string, string[]>();
 
-  Object.entries<'*' | string[] | ImplicitJsonSubsetDependency>(
-    nxJson.implicitDependencies || {}
-  )
-    .reduce((acc, entry) => {
-      function recur(value, acc = [], path: string[]) {
-        if (value === '*') {
-          // do nothing since '*' is calculated and always valid.
-        } else if (typeof value === 'string') {
-          // This is invalid because the only valid string is '*'
-          throw new Error(stripIndents`
-         Configuration Error 
-         nx.json is not configured properly. "${path.join(
-           ' > '
-         )}" is improperly configured to implicitly depend on "${value}" but should be an array of project names or "*".
-          `);
-        } else if (Array.isArray(value)) {
-          acc.push([entry[0], value]);
-        } else {
-          Object.entries(value).forEach(([k, v]) => {
-            recur(v, acc, [...path, k]);
-          });
-        }
-      }
+  if (nxJson.implicitDependencies) {
+    output.warn({
+      title:
+        'Using `implicitDependencies` for global implicit dependencies configuration is no longer supported.',
+      bodyLines: [
+        'Use "namedInputs" instead. You can run "nx repair" to automatically migrate your configuration.',
+        'For more information about the usage of "namedInputs" see https://nx.dev/deprecated/global-implicit-dependencies#global-implicit-dependencies',
+      ],
+    });
+  }
 
-      recur(entry[1], acc, [entry[0]]);
-      return acc;
-    }, [])
-    .reduce((map, [filename, projectNames]: [string, string[]]) => {
-      detectAndSetInvalidProjectValues(map, filename, projectNames, projects);
-      return map;
-    }, invalidImplicitDependencies);
+  const projectsWithNonArrayImplicitDependencies = new Map<string, unknown>();
 
-  workspaceJsonProjects
+  projectNames
     .filter((projectName) => {
       const project = projects[projectName];
-      return !!project.implicitDependencies;
+
+      // Report if for whatever reason, a project is configured to use implicitDependencies but it is not an array
+      if (
+        !!project.implicitDependencies &&
+        !Array.isArray(project.implicitDependencies)
+      ) {
+        projectsWithNonArrayImplicitDependencies.set(
+          projectName,
+          project.implicitDependencies
+        );
+      }
+      return (
+        !!project.implicitDependencies &&
+        Array.isArray(project.implicitDependencies)
+      );
     })
     .reduce((map, projectName) => {
       const project = projects[projectName];
-      detectAndSetInvalidProjectValues(
+      detectAndSetInvalidProjectGlobValues(
         map,
         projectName,
         project.implicitDependencies,
-        projects
+        projects,
+        projectGraphNodes
       );
       return map;
     }, invalidImplicitDependencies);
 
-  if (invalidImplicitDependencies.size === 0) {
+  if (
+    projectsWithNonArrayImplicitDependencies.size === 0 &&
+    invalidImplicitDependencies.size === 0
+  ) {
+    // No issues
     return;
   }
 
-  let message = `The following implicitDependencies specified in project configurations are invalid:
-  `;
-  invalidImplicitDependencies.forEach((projectNames, key) => {
-    const str = `  ${key}
-    ${projectNames.map((projectName) => `    ${projectName}`).join('\n')}`;
-    message += str;
-  });
+  let message = '';
 
-  throw new Error(`Configuration Error\n${message}`);
+  if (projectsWithNonArrayImplicitDependencies.size > 0) {
+    message += `The following implicitDependencies should be an array of strings:\n`;
+    projectsWithNonArrayImplicitDependencies.forEach(
+      (implicitDependencies, projectName) => {
+        message += `  ${projectName}.implicitDependencies: "${implicitDependencies}"\n`;
+      }
+    );
+    message += '\n';
+  }
+
+  if (invalidImplicitDependencies.size > 0) {
+    message += `The following implicitDependencies point to non-existent project(s):\n`;
+    message += [...invalidImplicitDependencies.keys()]
+      .map((key) => {
+        const projectNames = invalidImplicitDependencies.get(key);
+        return `  ${key}\n${projectNames
+          .map((projectName) => `    ${projectName}`)
+          .join('\n')}`;
+      })
+      .join('\n\n');
+  }
+
+  throw new WorkspaceValidityError(message);
 }
 
-function detectAndSetInvalidProjectValues(
+function detectAndSetInvalidProjectGlobValues(
   map: Map<string, string[]>,
   sourceName: string,
   desiredImplicitDeps: string[],
-  validProjects: any
+  projectConfigurations: Record<string, ProjectConfiguration>,
+  projects: Record<string, ProjectGraphProjectNode>
 ) {
-  const invalidProjects = desiredImplicitDeps.filter((implicit) => {
+  const invalidProjectsOrGlobs = desiredImplicitDeps.filter((implicit) => {
     const projectName = implicit.startsWith('!')
       ? implicit.substring(1)
       : implicit;
-    return !validProjects[projectName];
+    // Do not error on cross-workspace implicit dependency references
+    if (projectName.startsWith('nx-cloud:')) {
+      return false;
+    }
+    return !(
+      projectConfigurations[projectName] ||
+      findMatchingProjects([implicit], projects).length
+    );
   });
 
-  if (invalidProjects.length > 0) {
-    map.set(sourceName, invalidProjects);
+  if (invalidProjectsOrGlobs.length > 0) {
+    map.set(sourceName, invalidProjectsOrGlobs);
   }
 }

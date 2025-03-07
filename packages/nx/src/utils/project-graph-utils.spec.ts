@@ -1,22 +1,5 @@
-let jsonFileOverrides: Record<string, any> = {};
-
-jest.mock('nx/src/utils/fileutils', () => ({
-  ...(jest.requireActual('nx/src/utils/fileutils') as any),
-  readJsonFile: (path) => {
-    if (path.endsWith('nx.json')) return {};
-    if (!(path in jsonFileOverrides))
-      throw new Error('Tried to read non-mocked json file: ' + path);
-    return jsonFileOverrides[path];
-  },
-}));
-
-import { PackageJson } from './package-json';
 import { ProjectGraph } from '../config/project-graph';
-import {
-  getProjectNameFromDirPath,
-  getSourceDirOfDependentProjects,
-  mergeNpmScriptsWithTargets,
-} from './project-graph-utils';
+import { getSourceDirOfDependentProjects } from './project-graph-utils';
 
 describe('project graph utils', () => {
   describe('getSourceDirOfDependentProjects', () => {
@@ -55,6 +38,9 @@ describe('project graph utils', () => {
           data: {},
         },
       },
+      externalNodes: {
+        'npm:chalk': {},
+      },
       dependencies: {
         'demo-app': [
           {
@@ -74,7 +60,7 @@ describe('project graph utils', () => {
           },
         ],
       },
-    };
+    } as any;
     it('should correctly gather the source root dirs of the dependent projects', () => {
       const [paths] = getSourceDirOfDependentProjects('demo-app', projGraph);
 
@@ -114,149 +100,6 @@ describe('project graph utils', () => {
           projGraph
         );
         expect(warnings).toContain('implicit-lib');
-      });
-    });
-
-    it('should find the project given a file within its src root', () => {
-      expect(getProjectNameFromDirPath('apps/demo-app', projGraph)).toEqual(
-        'demo-app'
-      );
-
-      expect(getProjectNameFromDirPath('apps/demo-app/src', projGraph)).toEqual(
-        'demo-app'
-      );
-
-      expect(
-        getProjectNameFromDirPath('apps/demo-app/src/subdir/bla', projGraph)
-      ).toEqual('demo-app');
-    });
-
-    it('should throw an error if the project name has not been found', () => {
-      expect(() => {
-        getProjectNameFromDirPath('apps/demo-app-unknown');
-      }).toThrowError();
-    });
-  });
-
-  describe('mergeNpmScriptsWithTargets', () => {
-    const packageJson: PackageJson = {
-      name: 'my-app',
-      version: '0.0.0',
-      scripts: {
-        build: 'echo 1',
-      },
-    };
-
-    const packageJsonBuildTarget = {
-      executor: 'nx:run-script',
-      options: {
-        script: 'build',
-      },
-    };
-
-    beforeAll(() => {
-      jsonFileOverrides['apps/my-app/package.json'] = packageJson;
-    });
-
-    afterAll(() => {
-      jsonFileOverrides = {};
-    });
-
-    it('should prefer project.json targets', () => {
-      const projectJsonTargets = {
-        build: {
-          executor: 'nx:run-commands',
-          options: {
-            command: 'echo 2',
-          },
-        },
-      };
-
-      const result = mergeNpmScriptsWithTargets(
-        'apps/my-app',
-        projectJsonTargets
-      );
-      expect(result).toEqual(projectJsonTargets);
-    });
-
-    it('should provide targets from project.json and package.json', () => {
-      const projectJsonTargets = {
-        clean: {
-          executor: 'nx:run-commands',
-          options: {
-            command: 'echo 2',
-          },
-        },
-      };
-
-      const result = mergeNpmScriptsWithTargets(
-        'apps/my-app',
-        projectJsonTargets
-      );
-      expect(result).toEqual({
-        ...projectJsonTargets,
-        build: packageJsonBuildTarget,
-      });
-    });
-
-    it('should contain extended options from nx property in package.json', () => {
-      jsonFileOverrides['apps/my-other-app/package.json'] = {
-        name: 'my-other-app',
-        scripts: {
-          build: 'echo 1',
-        },
-        nx: {
-          targets: {
-            build: {
-              outputs: ['custom'],
-            },
-          },
-        },
-      };
-
-      const result = mergeNpmScriptsWithTargets('apps/my-other-app', null);
-      expect(result).toEqual({
-        build: { ...packageJsonBuildTarget, outputs: ['custom'] },
-      });
-    });
-
-    it('should work when project.json targets is null', () => {
-      const result = mergeNpmScriptsWithTargets('apps/my-app', null);
-
-      expect(result).toEqual({
-        build: {
-          executor: 'nx:run-script',
-          options: {
-            script: 'build',
-          },
-        },
-      });
-    });
-
-    it("should work when project root is ''", () => {
-      jsonFileOverrides['package.json'] = {
-        name: 'my-app',
-        scripts: {
-          test: 'echo testing',
-        },
-      };
-
-      const result = mergeNpmScriptsWithTargets('', {
-        build: {
-          executor: 'nx:run-commands',
-          options: { command: 'echo hi' },
-        },
-      });
-
-      expect(result).toEqual({
-        build: {
-          executor: 'nx:run-commands',
-          options: { command: 'echo hi' },
-        },
-        test: {
-          executor: 'nx:run-script',
-          options: { script: 'test' },
-        },
       });
     });
   });

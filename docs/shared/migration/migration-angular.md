@@ -1,123 +1,66 @@
+---
+title: Migrating an Angular CLI Project to Nx
+description: Learn how to transform your Angular CLI workspace into an Nx workspace, either as a standalone app or a full monorepo, with automated migration tools.
+---
+
 # Migrating an Angular CLI project to Nx
 
-Within an Nx workspace, you gain many capabilities that help you build applications and libraries using a monorepo approach. If you are currently using an Angular CLI workspace, you can transform it into an Nx workspace.
+Within an Nx workspace, you gain many capabilities that help you build applications and libraries. If you are currently using an Angular CLI workspace, you can transform it into an Nx workspace.
 
-{% youtube
-src="https://www.youtube.com/embed/dJG9zH30c-o"
-title="Nx in 100 seconds: Migrate an Angular CLI app to Nx"
-width="100%" /%}
+## Migrating to a Standalone Angular App with Nx
 
-## Prerequisites
+You can migrate to a standalone Angular app with the command:
 
-**The major version of your `Angular CLI` must align with the version of `Nx` you are upgrading to**. For example, if you're using Angular CLI version 7, you must transition using the latest version 7 release of Nx.
-
-## Using the Nx CLI while preserving the existing structure
-
-To use the Nx CLI in an existing Angular CLI workspace while keeping your existing file structure in place, use the `ng add` command with the `--preserve-angular-cli-layout` option:
-
-```bash
-ng add @nrwl/angular --preserve-angular-cli-layout
+```shell
+npx nx@latest init
 ```
 
-**Note**: If you specify a version of Nx (e.g. `ng add @nrwl/angular@13.10.0`), please make sure to use the appropriate command as shown in the compatibility table below:
+This command will install the correct version of Nx based on your Angular version.
 
-| Nx version          | Collection to use | Flag to use                     | Example                                                       |
-| ------------------- | ----------------- | ------------------------------- | ------------------------------------------------------------- |
-| >= 13.10.0          | `@nrwl/angular`   | `--preserve-angular-cli-layout` | `ng add @nrwl/angular@13.10.0 --preserve-angular-cli-layout`  |
-| >= 13.8.4 < 13.10.0 | `@nrwl/workspace` | `--preserve-angular-cli-layout` | `ng add @nrwl/workspace@13.8.4 --preserve-angular-cli-layout` |
-| < 13.8.4            | `@nrwl/workspace` | `--preserveAngularCLILayout`    | `ng add @nrwl/workspace@13.5.0 --preserveAngularCLILayout`    |
+This will enable you to use the Nx CLI in your existing Angular CLI workspace while keeping your existing file structure in place. The following changes will be made in your repo to enable Nx:
 
-This installs the `@nrwl/angular` (or `@nrwl/workspace`) package into your workspace and runs a generator (or schematic) to make following changes:
+- The `nx`, `@nx/workspace` and `prettier` packages will be installed.
+- An `nx.json` file will be created in the root of your workspace.
+- For an Angular 14+ repo, the `angular.json` file is split into separate `project.json` files for each project.
 
-- Installs the `nx` and `@nrwl/workspace` packages.
-- Creates an `nx.json` file in the root of your workspace.
-- Adds a `decorate-angular-cli.js` to the root of your workspace, and a `postinstall` script in your `package.json` to run the script when your dependencies are updated. The script forwards the `ng` commands to the Nx CLI (`nx`) to enable features such as [Computation Caching](/concepts/how-caching-works).
+**Note:** The changes will be slightly different for Angular 13 and lower.
 
-After the process completes, you can continue using the same `serve/build/lint/test` commands you are used to.
+## Migrating to an Nx Monorepo
 
-## Transforming an Angular CLI workspace to an Nx workspace
+If you want to migrate your Angular CLI project to an Nx Monorepo, run the following command:
 
-To fully take advantage of all the features provided by Nx and the Nx Angular plugin, you can do a full migration from an Angular CLI to an Nx workspace.
-
-> The automated migration supports Angular CLI workspaces with a standard structure, configurations and features. If your workspace has deviated from what the Angular CLI generates, you might not be able to use the automated migration and you will need to [manually migrate your workspace](#transitioning-manually).
->
-> Currently, the automated migration supports workspaces using the following executors (builders):
->
-> - `@angular-devkit/build-angular:browser`
-> - `@angular-devkit/build-angular:dev-server`
-> - `@angular-devkit/build-angular:extract-i18n`
-> - `@angular-devkit/build-angular:karma`
-> - `@angular-devkit/build-angular:ng-packagr`
-> - `@angular-devkit/build-angular:protractor`
-> - `@angular-devkit/build-angular:server`
-> - `@angular-eslint/builder:lint`
-> - `@cypress/schematic:cypress`
-> - `@nguniversal/builders:prerender`
-> - `@nguniversal/builders:ssr-dev-server`
->
-> Support for other executors may be added in the future.
-
-To transform an Angular CLI workspace to an Nx workspace, run the following command:
-
-```bash
-ng add @nrwl/angular
+```shell
+npx nx@latest init --integrated
 ```
 
-**Note**: If you specify a version of Nx (e.g. `ng add @nrwl/angular@13.10.0`), please make sure to use the appropriate command as shown in the compatibility table below:
+The command applies the following changes to your workspace:
 
-| Nx version | Command to run           |
-| ---------- | ------------------------ |
-| >= 13.10.0 | `ng add @nrwl/angular`   |
-| < 13.10.0  | `ng add @nrwl/workspace` |
-
-> **Note**: Support for workspaces with multiple applications and libraries was added in Nx v14.1.0. If you are migrating using an older version of Nx, your workspace can only contain one application and no libraries in order to use the automated migration, otherwise, you can still [migrate manually](#transitioning-manually).
-
-This installs the `@nrwl/angular` (or `@nrwl/workspace`) package into your workspace and runs a generator (or schematic) to transform your workspace. The generator applies the following changes to your workspace:
-
-- Installs the `nx` and `@nrwl/workspace` packages.
-- Creates an `nx.json` file in the root of your workspace.
-- Creates configuration files for Prettier.
-- Creates an `apps` folder for generating applications.
-- Creates a `libs` folder for generating libraries.
-- Creates a `tools` folder that includes files for custom workspace tooling, such as workspace-specific generators and scripts.
+- Installs the `nx`, `@nx/angular` and `@nx/workspace` packages.
 - Moves your applications into the `apps` folder, and updates the relevant file paths in your configuration files.
 - Moves your e2e suites into the `apps/<app name>-e2e` folder, and updates the relevant file paths in your configuration files.
 - Moves your libraries into the `libs` folder, and updates the relevant file paths in your configuration files.
 - Updates your `package.json` scripts to use `nx` instead of `ng`.
 - Splits your `angular.json` into `project.json` files for each project with updated paths.
-- Updates the `angular.json` configuration to reflect the changes made.
 
 After the changes are applied, your workspace file structure should look similar to the one below:
 
-```treeview
+```text
 <workspace name>/
 ├── apps/
-│   ├── <app name>/
-│   │   ├── src/
-│   │   │   ├── app/
-│   │   │   ├── assets/
-│   │   │   ├── environments/
-│   │   │   ├── favicon.ico
-│   │   │   ├── index.html
-│   │   │   ├── main.ts
-│   │   │   ├── polyfills.ts
-│   │   │   ├── styles.css
-│   │   │   └── test.ts
-│   │   ├── .browserslistrc
-│   │   ├── karma.conf.js
-│   │   ├── project.json
-│   │   ├── tsconfig.app.json
-│   │   └── tsconfig.spec.json
-│   └── <app name>-e2e/
+│   └─ <app name>/
 │       ├── src/
-│       ├── protractor.conf.js | cypress.json
+│       │   ├── app/
+│       │   ├── assets/
+│       │   ├── favicon.ico
+│       │   ├── index.html
+│       │   ├── main.ts
+│       │   └── styles.css
 │       ├── project.json
-│       └── tsconfig.json
+│       ├── tsconfig.app.json
+│       └── tsconfig.spec.json
 ├── libs/
 │   └── <lib name>/
 │       ├── src/
-│       ├── .browserslistrc
-│       ├── karma.conf.js
 │       ├── ng-package.json
 │       ├── package.json
 │       ├── project.json
@@ -130,8 +73,6 @@ After the changes are applied, your workspace file structure should look similar
 ├── .gitignore
 ├── .prettierignore
 ├── .prettierrc
-├── angular.json
-├── decorate-angular-cli.js
 ├── karma.conf.js
 ├── nx.json
 ├── package.json
@@ -139,325 +80,166 @@ After the changes are applied, your workspace file structure should look similar
 └── tsconfig.base.json
 ```
 
-Your workspace is now powered by Nx! You can verify out that your application still runs as intended:
+### Modified Folder Structure
 
-- To serve, run `ng serve` (or `nx serve`).
-- To build, run `ng build` (or `nx build`).
-- To run unit tests, run `ng test` (or `nx test`).
-- To run e2e tests, run `ng e2e` (or `nx e2e`).
+The automated migration supports Angular CLI workspaces with a standard structure, configurations and features. It supports workspaces using the following executors (builders):
+
+- `@angular-devkit/build-angular:application`
+- `@angular-devkit/build-angular:browser`
+- `@angular-devkit/build-angular:browser-esbuild`
+- `@angular-devkit/build-angular:dev-server`
+- `@angular-devkit/build-angular:extract-i18n`
+- `@angular-devkit/build-angular:karma`
+- `@angular-devkit/build-angular:ng-packagr`
+- `@angular-devkit/build-angular:prerender`
+- `@angular-devkit/build-angular:protractor`
+- `@angular-devkit/build-angular:server`
+- `@angular-devkit/build-angular:ssr-dev-server`
+- `@angular-eslint/builder:lint`
+- `@cypress/schematic:cypress`
+- `@nguniversal/builders:prerender`
+- `@nguniversal/builders:ssr-dev-server`
+
+Support for other executors may be added in the future.
+
+## After migration
+
+Your workspace is now powered by Nx! You can verify that your application still runs as intended:
+
+- To serve, run `nx serve <app name>`.
+- To build, run `nx build <app name>`.
+- To run unit tests, run `nx test <app name>`.
 - To see your project graph, run `nx graph`.
 
-> Your project graph will grow as you add, and use more applications and libraries. You can add the `--watch` flag to `nx graph` to see this changes in-browser as you add them.
+> Your project graph will grow as you add and use more applications and libraries. You can add the `--watch` flag to `nx graph` to see the changes in-browser as you add them.
+
+## Set Up CI for Your Angular Workspace
+
+This tutorial walked you through how Nx can improve the local development experience, but the biggest difference Nx makes is in CI. As repositories get bigger, making sure that the CI is fast, reliable and maintainable can get very challenging. Nx provides a solution.
+
+- Nx reduces wasted time in CI with the [`affected` command](/ci/features/affected).
+- Nx Replay's [remote caching](/ci/features/remote-cache) will reuse task artifacts from different CI executions making sure you will never run the same computation twice.
+- Nx Agents [efficiently distribute tasks across machines](/ci/concepts/parallelization-distribution) ensuring constant CI time regardless of the repository size. The right number of machines is allocated for each PR to ensure good performance without wasting compute.
+- Nx Atomizer [automatically splits](/ci/features/split-e2e-tasks) large e2e tests to distribute them across machines. Nx can also automatically [identify and rerun flaky e2e tests](/ci/features/flaky-tasks).
+
+### Connect to Nx Cloud
+
+Nx Cloud is a companion app for your CI system that provides remote caching, task distribution, e2e tests deflaking, better DX and more.
+
+Now that we're working on the CI pipeline, it is important for your changes to be pushed to a GitHub repository.
+
+1. Commit your existing changes with `git add . && git commit -am "updates"`
+2. [Create a new GitHub repository](https://github.com/new)
+3. Follow GitHub's instructions to push your existing code to the repository
+
+Now connect your repository to Nx Cloud with the following command:
+
+```shell
+npx nx connect
+```
+
+A browser window will open to register your repository in your [Nx Cloud](https://cloud.nx.app) account. The link is also printed to the terminal if the windows does not open, or you closed it before finishing the steps. The app will guide you to create a PR to enable Nx Cloud on your repository.
+
+![](/shared/tutorials/nx-cloud-github-connect.avif)
+
+Once the PR is created, merge it into your main branch.
+
+![](/shared/tutorials/github-cloud-pr-merged.avif)
+
+And make sure you pull the latest changes locally:
+
+```shell
+git pull
+```
+
+You should now have an `nxCloudId` property specified in the `nx.json` file.
+
+### Create a CI Workflow
+
+Use the following command to generate a CI workflow file.
+
+```shell
+npx nx generate ci-workflow --ci=github
+```
+
+This generator creates a `.github/workflows/ci.yml` file that contains a CI pipeline that will run the `lint`, `test`, `build` and `e2e` tasks for projects that are affected by any given PR. Since we are using Nx Cloud, the pipeline will also distribute tasks across multiple machines to ensure fast and reliable CI runs.
+
+The key lines in the CI pipeline are:
+
+```yml {% fileName=".github/workflows/ci.yml" highlightLines=["10-14", "21-22"] %}
+name: CI
+# ...
+jobs:
+  main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # This enables task distribution via Nx Cloud
+      # Run this command as early as possible, before dependencies are installed
+      # Learn more at https://nx.dev/ci/reference/nx-cloud-cli#npx-nxcloud-startcirun
+      # Connect your workspace by running "nx connect" and uncomment this
+      - run: npx nx-cloud start-ci-run --distribute-on="3 linux-medium-js" --stop-agents-after="build"
+      - uses: actions/setup-node@v3
+        with:
+          node-version: 20
+          cache: 'npm'
+      - run: npm ci --legacy-peer-deps
+      - uses: nrwl/nx-set-shas@v4
+      # Nx Affected runs only tasks affected by the changes in this PR/commit. Learn more: https://nx.dev/ci/features/affected
+      - run: npx nx affected -t lint test build
+```
+
+### Open a Pull Request
+
+Commit the changes and open a new PR on GitHub.
+
+```shell
+git add .
+git commit -m 'add CI workflow file'
+git push origin add-workflow
+```
+
+When you view the PR on GitHub, you will see a comment from Nx Cloud that reports on the status of the CI run.
+
+![Nx Cloud report](/shared/tutorials/github-pr-cloud-report.avif)
+
+The `See all runs` link goes to a page with the progress and results of tasks that were run in the CI pipeline.
+
+![Run details](/shared/tutorials/nx-cloud-run-details.avif)
+
+For more information about how Nx can improve your CI pipeline, check out one of these detailed tutorials:
+
+- [Circle CI with Nx](/ci/intro/tutorials/circle)
+- [GitHub Actions with Nx](/ci/intro/tutorials/github-actions)
+
+## Learn More
 
 Learn more about the advantages of Nx in the following guides:
 
-- [Using Cypress for e2e tests](/packages/cypress)
-- [Using Jest for unit tests](/packages/jest)
+- [Using Cypress for e2e tests](/nx-api/cypress)
+- [Using Jest for unit tests](/nx-api/jest)
 - [Computation Caching](/concepts/how-caching-works)
-- [Rebuilding and Retesting What is Affected](/concepts/affected)
-
-## Migrating multiple Angular CLI workspaces into an Nx Monorepo
-
-Migrating multiple Angular CLI workspaces into a single Nx monorepo involves some more manual steps and decisions to take.
-
-- can we first align all apps to the same Angular version (e.g. using Angular CLI migrations)
-- convert each of the apps into an easy to copy "Nx shape" (with `project.json` etc) using some of the before mentioned migration scripts
-- copy everything into a new Nx workspace
-
-Very often however we might also need to do it incrementally, such as
-
-- migrating all apps into a monorepo
-- keep them at different Angular & external dependency versions until everything is migrated
-- migrate them one by one incrementally and over time
-
-The following video tutorial walks you through such a scenario.
-
-{% youtube
-src="https://www.youtube.com/embed/M5NwkRNrpK0"
-title="Nx Tutorial: Migrate Multiple Angular CLI apps into a Single Nx Monorepo"
-width="100%" /%}
-
-## Migrating an Angular app manually
-
-If you are unable to automatically transform your Angular CLI workspace to an Nx workspace using the [ng add](#transforming-an-angular-cli-workspace-to-an-nx-workspace) method, there are some manual steps you can take to move your project(s) into an Nx workspace.
-
-### Generating a new workspace
-
-To start, run the command to generate an Nx workspace with an Angular application.
-
-**Using `npx`**
-
-```bash
-npx create-nx-workspace myorg --preset=angular
-```
-
-**Using `npm init`**
-
-```bash
-npm init nx-workspace myorg --preset=angular
-```
-
-**Using `yarn create`**
-
-```bash
-yarn create nx-workspace myorg --preset=angular
-```
-
-When prompted for the `application name`, enter the _project name_ from your current `angular.json` file.
-
-A new Nx workspace with your `org name` as the folder name, and your `application name` as the first application is generated.
-
-```treeview
-<workspace name>/
-├── apps/
-│   ├── <app name>/
-│   │   ├── src/
-│   │   │   ├── app/
-│   │   │   ├── assets/
-│   │   │   ├── environments/
-│   │   │   ├── favicon.ico
-│   │   │   ├── index.html
-│   │   │   ├── main.ts
-│   │   │   ├── polyfills.ts
-│   │   │   ├── styles.css
-│   │   │   └── test.ts
-│   │   ├── browserslist
-│   │   ├── jest.conf.js
-│   │   ├── tsconfig.app.json
-│   │   ├── tsconfig.json
-│   │   ├── tslint.json
-│   │   └── tsconfig.spec.json
-│   └── <app name>-e2e/
-│       ├── src/
-│       ├── cypress.json
-│       ├── tsconfig.e2e.json
-│       ├── tslint.json
-│       └── tsconfig.json
-├── libs/
-├── tools/
-├── .editorconfig
-├── .eslintrc.json
-├── .gitignore
-├── .prettierignore
-├── .prettierrc
-├── angular.json
-├── decorate-angular-cli.js
-├── jest.config.js
-├── jest.preset.js
-├── nx.json
-├── package.json
-├── README.md
-└── tsconfig.base.json
-```
-
-### Copying over application files
-
-Your application code is self-contained within the `src` folder of your Angular CLI workspace.
-
-- Copy the `src` folder from your Angular CLI project to the `apps/<app name>` folder, overwriting the existing `src` folder.
-- Copy any project-specific configuration files, such as `browserslist`, or service worker configuration files into their relative path under the `apps/<app name>` folder.
-- Transfer the `assets`, `scripts`, `styles`, and build-specific configuration, such as service worker configuration, from your Angular CLI `angular.json` to the `apps/<app name>/project.json` file.
-
-Verify your application runs correctly by running:
-
-```bash
-ng serve <app name>
-```
-
-### Updating your unit testing configuration
-
-Nx uses Jest by default. If you have any custom Jest configuration, you need to update the workspace Jest configuration also.
-
-Verify your tests run correctly by running:
-
-```bash
-ng test <app name>
-```
-
-If you are using `Karma` for unit testing:
-
-- Copy the `karma.conf.js` file to your `apps/<app name>` folder.
-- Copy the `test.ts` file to your `apps/<app name>/src` folder.
-- Copy the `test` target in your `architect` configuration from your Angular CLI `angular.json` file into the `targets` configuration in the `apps/<app name>/project.json` file in your Nx workspace.
-- Update the `test` target file paths to be relative to `apps/<app name>`.
-
-```json
-// apps/<app name>/project.json
-{
-  "projectType": "application",
-  "sourceRoot": "apps/<app name>/src",
-  "prefix": "myapp",
-  "targets": {
-    "test": {
-      "executor": "@angular-devkit/build-angular:karma",
-      "options": {
-        "main": "apps/<app name>/src/test.ts",
-        "polyfills": "apps/<app name>/src/polyfills.ts",
-        "tsConfig": "apps/<app name>/tsconfig.spec.json",
-        "karmaConfig": "apps/<app name>/karma.conf.js",
-        "assets": [
-          "apps/<app name>/src/favicon.ico",
-          "apps/<app name>/src/assets"
-        ],
-        "styles": ["apps/<app name>/src/styles.css"],
-        "scripts": []
-      }
-    }
-    ...
-  }
-}
-```
-
-> Jest will be used by default when generating new applications. If you want to continue using `Karma`, set the `unitTestRunner` to `karma` in the `generators` section of the `nx.json` file.
-
-- Update `test-setup.ts` to `test.ts` in the `files` array of the `apps/<app name>/tsconfig.spec.json` file.
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc",
-    "types": ["jasmine", "node"]
-  },
-  "files": ["src/test.ts", "src/polyfills.ts"],
-  "include": ["**/*.spec.ts", "**/*.test.ts", "**/*.d.ts"]
-}
-```
-
-Verify your tests run correctly by running:
-
-```bash
-ng test <app name>
-```
-
-### Updating your E2E testing configuration
-
-Nx uses Cypress by default. If you are already using Cypress, copy your E2E setup files into the `apps/<app name>-e2e` folder and verify your tests still run correctly by running:
-
-```bash
-ng e2e <app name>-e2e
-```
-
-If you are using `Protractor` for E2E testing:
-
-- Delete the `apps/<app name>-e2e` folder that was generated to use Cypress.
-- Copy the `e2e` folder from your Angular CLI workspace into the `apps` folder.
-- Rename the `e2e` folder to `<app name>-e2e`.
-- Create the project configuration file at `apps/<app name>-e2e/project.json`.
-- Copy the project configuration for `app name` from the Angular CLI workspace `angular.json` file to `apps/<app name>-e2e/project.json` and adjust the file paths to be relative to `apps/<app name>-e2e`.
-
-```json
-// apps/<app name>-e2e/project.json
-{
-  "projectType": "application",
-  "targets": {
-    "e2e": {
-      "executor": "@angular-devkit/build-angular:protractor",
-      "options": {
-        "protractorConfig": "apps/<app name>-e2e/protractor.conf.js"
-      },
-      "configurations": {
-        "production": {
-          "devServerTarget": "<app name>:serve:production"
-        },
-        "development": {
-          "devServerTarget": "<app name>:serve:development"
-        }
-      }
-      "defaultConfiguration": "development"
-    },
-    "lint": {
-      "executor": "@angular-devkit/build-angular:tslint",
-      "options": {
-        "tsConfig": "apps/<app name>-e2e/tsconfig.e2e.json",
-        "exclude": ["**/node_modules/**", "!apps/<app name>-e2e/**/*"]
-      }
-    }
-  },
-  "implicitDependencies": ["<app name>"],
-  "tags": []
-}
-```
-
-Create a `tsconfig.e2e.json` file under `apps/<app name>-e2e` folder:
-
-```json
-{
-  "extends": "./tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../dist/out-tsc"
-  }
-}
-```
-
-Update the `apps/<app name>/tsconfig.json` to extend the root `tsconfig.json`:
-
-```json
-{
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "outDir": "../../out-tsc/<app name>-e2e",
-    "module": "commonjs",
-    "target": "es5",
-    "types": ["jasmine", "jasminewd2", "node"]
-  }
-}
-```
-
-Verify your E2E tests run correctly by running:
-
-```bash
-ng e2e <app name>-e2e
-```
-
-> Cypress will be used by default when generating new applications. If you want to continue using `Protractor`, set the `e2eTestRunner` to `protractor` in the `generators` section of the `nx.json` file.
-
-### Updating your linting configuration
-
-For lint rules, migrate your existing rules into the root `tslint.json` file.
-
-Verify your lint checks run correctly by running:
-
-```bash
-npm run lint
-```
-
-OR
-
-```bash
-yarn lint
-```
-
-Learn more about the advantages of Nx in the following guides:
-
-[Using Cypress for e2e tests](/packages/cypress) \
-[Using Jest for unit tests](/packages/jest) \
-[Rebuilding and Retesting What is Affected](/concepts/affected)
+- [Rebuilding and Retesting What is Affected](/ci/features/affected)
+- [Integrate with Editors](/getting-started/editor-setup)
+- [Advanced Angular Micro Frontends with Dynamic Module Federation](/recipes/angular/dynamic-module-federation-with-angular)
 
 ## From Nx Console
 
-{% youtube
-src="https://www.youtube.com/embed/vRj9SNVYKrE"
-title="Nx Console Updates 17.15.0"
-width="100%" /%}
-
-As of Nx Console version 17.15.0, Angular CLI users will receive a notice periodically when running commands via Nx Console, asking if they want to use Nx to make their Angular commands faster.
-
-When you click this button, we’ll run the [make-angular-cli-faster script](https://github.com/nrwl/nx/tree/master/packages/make-angular-cli-faster) to decorate your Angular workspace with Nx, allowing for cached builds, and for you to share this cache with your teammates via Nx Cloud.
-
-The script will make the following changes:
-
-- Installs the `@nrwl/workspace` and `nx` packages.
-  - If you opted into Nx Cloud, `@nrwl/nx-cloud` will be installed as well.
-  - If your project's Angular version is greater than or equal to version 13, then the `@nrwl/angular` package will be installed as well.
-- Creates an `nx.json` file in the root of your workspace.
-- Adds a `decorate-angular-cli.js` to the root of your workspace, and a `postinstall` script in your `package.json` to run the script when your dependencies are updated. The script forwards the `ng` commands to the Nx CLI (`nx`) to enable features such as [Computation Caching](/concepts/how-caching-works).
-
-By running this command and accepting Nx Cloud, Nx distributed caching is now enabled.
-
-Once the script has run, commit the changes. Reverting these changes will effectively undo the changes made.
+Nx Console no longer supports the Angular CLI. Angular CLI users will receive a notice, asking if they want to switch to Nx. When you click this button, we'll run the `nx init` command to set up the Nx CLI, allowing for cached builds, and for you to share this cache with your teammates via Nx Cloud.
 
 If you're not ready to make the change yet, you can come back to this later:
 
-- If you're using Nx Console: open the Vs Code command palette and start typing "make angular faster".
-- Regardless of using Nx Console (or your IDE): run `npx make-angular-cli-faster` from the root of your project.
+- If you're using Nx Console: open the Vs Code command palette and start typing "Convert Angular CLI to Nx Workspace".
+- Regardless of using Nx Console (or your IDE): run `npx nx init` from the root of your project.
+
+Once the script has run, commit the changes. Reverting this commit will effectively undo the changes made.
+
+{% cards cols="1" mdCols="3" smCols="3" lgCols="3" %}
+
+{% card title="Nx and the Angular CLI" description="Differences between Nx and the Angular CLI" type="documentation" url="/nx-api/angular/documents/nx-and-angular" /%}
+
+{% card title="Multiple Angular Repositories to one Nx Workspace" description="Combine multiple Angular CLI workspaces into one Nx workspace" type="documentation" url="/recipes/angular/migration/angular-multiple" /%}
+
+{% /cards %}

@@ -4,28 +4,35 @@
   "cli": "nx",
   "title": "SCAM Generator Options Schema",
   "type": "object",
-  "description": "Creates a new, generic Angular component definition in the given or default project.",
+  "examples": [
+    {
+      "description": "Generate a component with the exported symbol matching the file name. It results in the component `FooComponent` at `mylib/src/lib/foo.component.ts`",
+      "command": "nx g @nx/angular:scam mylib/src/lib/foo.component.ts"
+    },
+    {
+      "description": "Generate a component without providing the file extension. It results in the component `FooComponent` at `mylib/src/lib/foo.component.ts`",
+      "command": "nx g @nx/angular:scam mylib/src/lib/foo"
+    },
+    {
+      "description": "Generate a component with the exported symbol different from the file name. It results in the component `CustomComponent` at `mylib/src/lib/foo.component.ts`",
+      "command": "nx g @nx/angular:scam mylib/src/lib/foo --name=custom"
+    }
+  ],
+  "description": "Creates a new Angular SCAM.",
   "additionalProperties": false,
   "properties": {
     "path": {
       "type": "string",
-      "format": "path",
-      "description": "The path at which to create the component file, relative to the current workspace. Default is a folder with the same name as the component in the project root.",
-      "visible": false
-    },
-    "project": {
-      "type": "string",
-      "description": "The name of the project.",
-      "x-dropdown": "projects"
-    },
-    "name": {
-      "type": "string",
-      "description": "The name of the component.",
+      "description": "The file path to the SCAM. Relative to the current working directory.",
       "$default": {
         "$source": "argv",
         "index": 0
       },
-      "x-prompt": "What name would you like to use for the component?"
+      "x-prompt": "What is the SCAM file path?"
+    },
+    "name": {
+      "type": "string",
+      "description": "The component symbol name. Defaults to the last segment of the file path."
     },
     "displayBlock": {
       "description": "Specifies if the style will contain `:host { display: block; }`.",
@@ -72,12 +79,8 @@
     "inlineScam": {
       "type": "boolean",
       "description": "Create the `NgModule` in the same file as the component.",
-      "default": true
-    },
-    "flat": {
-      "type": "boolean",
-      "description": "Create the new files at the top level of the current project.",
-      "default": false
+      "default": true,
+      "x-priority": "important"
     },
     "selector": {
       "type": "string",
@@ -111,8 +114,15 @@
     "export": {
       "type": "boolean",
       "description": "Specifies if the SCAM should be exported from the project's entry point (normally `index.ts`). It only applies to libraries.",
-      "default": true
+      "default": true,
+      "x-priority": "important"
+    },
+    "skipFormat": {
+      "type": "boolean",
+      "description": "Skip formatting files.",
+      "default": false,
+      "x-priority": "internal"
     }
   },
-  "required": ["name"]
+  "required": ["path"]
 }

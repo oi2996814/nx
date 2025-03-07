@@ -1,9 +1,64 @@
-import * as fs from 'fs';
+import * as fs from 'node:fs';
 import * as path from 'path';
 import * as os from 'os';
-import * as fse from 'fs-extra';
 
 import { CopyAssetsHandler } from './copy-assets-handler';
+
+import { Subject } from 'rxjs';
+import type { ChangedFile } from 'nx/src/daemon/client/client';
+
+const mockWatcher = new Subject<ChangedFile>();
+
+jest.mock(
+  'nx/src/daemon/client/client',
+  (): Partial<typeof import('nx/src/daemon/client/client')> => {
+    const original = jest.requireActual('nx/src/daemon/client/client');
+    return {
+      ...original,
+      daemonClient: {
+        registerFileWatcher: async (
+          config: unknown,
+          callback: (
+            err,
+            data: {
+              changedProjects: string[];
+              changedFiles: ChangedFile[];
+            }
+          ) => void
+        ) => {
+          mockWatcher.subscribe((data) => {
+            callback(null, {
+              changedProjects: [],
+              changedFiles: [data],
+            });
+          });
+          return () => {};
+        },
+      },
+    };
+  }
+);
+
+function createMockedWatchedFile(path: string) {
+  mockWatcher.next({
+    type: 'create',
+    path,
+  });
+}
+
+function deletedMockedWatchedFile(path: string) {
+  mockWatcher.next({
+    type: 'delete',
+    path,
+  });
+}
+
+function updateMockedWatchedFile(path: string) {
+  mockWatcher.next({
+    type: 'update',
+    path,
+  });
+}
 
 describe('AssetInputOutputHandler', () => {
   let sut: CopyAssetsHandler;
@@ -22,12 +77,12 @@ describe('AssetInputOutputHandler', () => {
     outputDir = path.join(rootDir, 'dist/mylib');
 
     // Reset temp directory
-    fse.removeSync(rootDir);
-    fse.mkdirpSync(path.join(projectDir, 'docs/a/b'));
+    fs.rmSync(rootDir, { recursive: true, force: true });
+    fs.mkdirSync(path.join(projectDir, 'docs/a/b'), { recursive: true });
 
     // Workspace ignore files
-    fse.writeFileSync(path.join(rootDir, '.gitignore'), `git-ignore.md`);
-    fse.writeFileSync(path.join(rootDir, '.nxignore'), `nx-ignore.md`);
+    fs.writeFileSync(path.join(rootDir, '.gitignore'), `git-ignore.md`);
+    fs.writeFileSync(path.join(rootDir, '.nxignore'), `nx-ignore.md`);
 
     sut = new CopyAssetsHandler({
       rootDir,
@@ -50,145 +105,118 @@ describe('AssetInputOutputHandler', () => {
   test('watchAndProcessOnAssetChange', async () => {
     const dispose = await sut.watchAndProcessOnAssetChange();
 
-    fse.writeFileSync(path.join(rootDir, 'LICENSE'), 'license');
-    await wait(100);
-    fse.writeFileSync(path.join(projectDir, 'README.md'), 'readme');
-    await wait(100); // give watch time to react
-    fse.writeFileSync(path.join(projectDir, 'docs/test1.md'), 'test');
-    await wait(100);
-    fse.writeFileSync(path.join(projectDir, 'docs/test2.md'), 'test');
-    await wait(100);
-    fse.writeFileSync(path.join(projectDir, 'docs/ignore.md'), 'IGNORE ME');
-    await wait(100);
-    fse.writeFileSync(path.join(projectDir, 'docs/git-ignore.md'), 'IGNORE ME');
-    await wait(100);
-    fse.writeFileSync(path.join(projectDir, 'docs/nx-ignore.md'), 'IGNORE ME');
-    await wait(100);
-    fse.writeFileSync(
-      path.join(projectDir, 'docs/a/b/nested-ignore.md'),
-      'IGNORE ME'
-    );
-    await wait(100);
-    fse.writeFileSync(path.join(projectDir, 'docs/test1.md'), 'updated');
-    await wait(100);
-    fse.removeSync(path.join(projectDir, 'docs'));
-    await wait(100);
+    createMockedWatchedFile(path.join(rootDir, 'LICENSE'));
+    createMockedWatchedFile(path.join(projectDir, 'README.md'));
+    createMockedWatchedFile(path.join(projectDir, 'docs/test1.md'));
+    createMockedWatchedFile(path.join(projectDir, 'docs/test2.md'));
+    createMockedWatchedFile(path.join(projectDir, 'docs/ignore.md'));
+    createMockedWatchedFile(path.join(projectDir, 'docs/git-ignore.md'));
+    createMockedWatchedFile(path.join(projectDir, 'docs/nx-ignore.md'));
+    createMockedWatchedFile(path.join(projectDir, 'docs/a/b/nested-ignore.md'));
+    updateMockedWatchedFile(path.join(projectDir, 'docs/test1.md'));
+    deletedMockedWatchedFile(path.join(projectDir, 'docs/test1.md'));
+    deletedMockedWatchedFile(path.join(projectDir, 'docs/test2.md'));
 
-    expect(callback.mock.calls).toEqual([
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'LICENSE'),
-            dest: path.join(rootDir, 'dist/mylib/LICENSE'),
-          },
-        ],
-      ],
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'mylib/README.md'),
-            dest: path.join(rootDir, 'dist/mylib/README.md'),
-          },
-        ],
-      ],
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'mylib/docs/test1.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
-          },
-        ],
-      ],
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'mylib/docs/test2.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test2.md'),
-          },
-        ],
-      ],
-      [
-        [
-          {
-            type: 'update',
-            src: path.join(rootDir, 'mylib/docs/test1.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
-          },
-        ],
-      ],
-      // Deleting the directory should only happen once, not per file.
-      [
-        [
-          {
-            type: 'delete',
-            src: path.join(rootDir, 'mylib/docs/test1.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
-          },
-          {
-            type: 'delete',
-            src: path.join(rootDir, 'mylib/docs/test2.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test2.md'),
-          },
-        ],
-      ],
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'LICENSE'),
+        dest: path.join(rootDir, 'dist/mylib/LICENSE'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/README.md'),
+        dest: path.join(rootDir, 'dist/mylib/README.md'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/docs/test1.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/docs/test2.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test2.md'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'update',
+        src: path.join(rootDir, 'mylib/docs/test1.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'delete',
+        src: path.join(rootDir, 'mylib/docs/test1.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'delete',
+        src: path.join(rootDir, 'mylib/docs/test2.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test2.md'),
+      },
+    ]);
+    expect(callback).not.toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/docs/a/b/nested-ignore.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/a/b/nested-ignore.md'),
+      },
     ]);
 
-    await dispose();
-    fse.removeSync(rootDir);
+    dispose();
   });
 
   test('processAllAssetsOnce', async () => {
-    fse.writeFileSync(path.join(rootDir, 'LICENSE'), 'license');
-    fse.writeFileSync(path.join(projectDir, 'README.md'), 'readme');
-    fse.writeFileSync(path.join(projectDir, 'docs/test1.md'), 'test');
-    fse.writeFileSync(path.join(projectDir, 'docs/test2.md'), 'test');
-    fse.writeFileSync(path.join(projectDir, 'docs/ignore.md'), 'IGNORE ME');
-    fse.writeFileSync(path.join(projectDir, 'docs/git-ignore.md'), 'IGNORE ME');
-    fse.writeFileSync(path.join(projectDir, 'docs/nx-ignore.md'), 'IGNORE ME');
-    fse.writeFileSync(
+    fs.writeFileSync(path.join(rootDir, 'LICENSE'), 'license');
+    fs.writeFileSync(path.join(projectDir, 'README.md'), 'readme');
+    fs.writeFileSync(path.join(projectDir, 'docs/test1.md'), 'test');
+    fs.writeFileSync(path.join(projectDir, 'docs/test2.md'), 'test');
+    fs.writeFileSync(path.join(projectDir, 'docs/ignore.md'), 'IGNORE ME');
+    fs.writeFileSync(path.join(projectDir, 'docs/git-ignore.md'), 'IGNORE ME');
+    fs.writeFileSync(path.join(projectDir, 'docs/nx-ignore.md'), 'IGNORE ME');
+    fs.writeFileSync(
       path.join(projectDir, 'docs/a/b/nested-ignore.md'),
       'IGNORE ME'
     );
 
     await sut.processAllAssetsOnce();
 
-    expect(callback.mock.calls).toEqual([
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'LICENSE'),
-            dest: path.join(rootDir, 'dist/mylib/LICENSE'),
-          },
-        ],
-      ],
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'mylib/README.md'),
-            dest: path.join(rootDir, 'dist/mylib/README.md'),
-          },
-        ],
-      ],
-      [
-        [
-          {
-            type: 'create',
-            src: path.join(rootDir, 'mylib/docs/test1.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
-          },
-          {
-            type: 'create',
-            src: path.join(rootDir, 'mylib/docs/test2.md'),
-            dest: path.join(rootDir, 'dist/mylib/docs/test2.md'),
-          },
-        ],
-      ],
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'LICENSE'),
+        dest: path.join(rootDir, 'dist/mylib/LICENSE'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/README.md'),
+        dest: path.join(rootDir, 'dist/mylib/README.md'),
+      },
+    ]);
+    expect(callback).toHaveBeenCalledWith([
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/docs/test1.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test1.md'),
+      },
+      {
+        type: 'create',
+        src: path.join(rootDir, 'mylib/docs/test2.md'),
+        dest: path.join(rootDir, 'dist/mylib/docs/test2.md'),
+      },
     ]);
   });
 });

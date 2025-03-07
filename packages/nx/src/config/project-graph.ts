@@ -1,8 +1,9 @@
 import type {
-  TargetConfiguration,
+  ProjectConfiguration,
+  ProjectsConfigurations,
   Workspace,
 } from './workspace-json-project-json';
-import { InputDefinition } from './workspace-json-project-json';
+import { NxJsonConfiguration } from './nx-json';
 
 /**
  * Some metadata about a file
@@ -10,9 +11,47 @@ import { InputDefinition } from './workspace-json-project-json';
 export interface FileData {
   file: string;
   hash: string;
-  /** @deprecated this field will be removed in v13. Use {@link path.extname} to parse extension */
-  ext?: string;
-  deps?: string[];
+  /**
+   * An array of dependencies. If an element is just a string,
+   * the dependency is assumed to be a static dependency targetting
+   * that string. If the element is a tuple with two elements, the first element
+   * inside of it is the target project, with the second element being the type of dependency.
+   * If the tuple has 3 elements, the first is preceded by a source.
+   */
+  deps?: FileDataDependency[];
+}
+
+/**
+ * A file data dependency, as stored in the cache. If just a string,
+ * the dependency is assumed to be a static dependency targetting
+ * that string. If it is a tuple with two elements, the first element
+ * inside of it is the target project, with the second element being the type of dependency.
+ * If the tuple has 3 elements, the first is preceded by a source.
+ */
+export type FileDataDependency =
+  | string
+  | [target: string, type: DependencyType]
+  | [source: string, target: string, type: DependencyType];
+
+export function fileDataDepTarget(dep: FileDataDependency) {
+  return typeof dep === 'string'
+    ? dep
+    : Array.isArray(dep) && dep.length === 2
+    ? dep[0]
+    : dep[1];
+}
+
+export function fileDataDepType(dep: FileDataDependency) {
+  return typeof dep === 'string'
+    ? 'static'
+    : Array.isArray(dep) && dep.length === 2
+    ? dep[1]
+    : dep[2];
+}
+
+export interface FileMap {
+  nonProjectFiles: FileData[];
+  projectFileMap: ProjectFileMap;
 }
 
 /**
@@ -25,20 +64,10 @@ export interface ProjectFileMap {
 /**
  * A Graph of projects in the workspace and dependencies between them
  */
-export interface ProjectGraph<T = any> {
-  nodes: Record<string, ProjectGraphProjectNode<T>>;
+export interface ProjectGraph {
+  nodes: Record<string, ProjectGraphProjectNode>;
   externalNodes?: Record<string, ProjectGraphExternalNode>;
   dependencies: Record<string, ProjectGraphDependency[]>;
-  // this is optional otherwise it might break folks who use project graph creation
-  allWorkspaceFiles?: FileData[];
-  version?: string;
-}
-
-export interface ProjectGraphV4<T = any> {
-  nodes: Record<string, ProjectGraphNode<T>>;
-  dependencies: Record<string, ProjectGraphDependency[]>;
-  // this is optional otherwise it might break folks who use project graph creation
-  allWorkspaceFiles?: FileData[];
   version?: string;
 }
 
@@ -61,60 +90,49 @@ export enum DependencyType {
 }
 
 /**
- * A node describing a project or an external node in a workspace
- */
-export type ProjectGraphNode<T = any> =
-  | ProjectGraphProjectNode<T>
-  | ProjectGraphExternalNode;
-
-/**
  * A node describing a project in a workspace
  */
-export interface ProjectGraphProjectNode<T = any> {
+export interface ProjectGraphProjectNode {
   type: 'app' | 'e2e' | 'lib';
   name: string;
   /**
    * Additional metadata about a project
    */
-  data: T & {
-    /**
-     * The project's root directory
-     */
-    root: string;
-    sourceRoot?: string;
-    /**
-     * Named inputs associated with a project
-     */
-    namedInputs?: { [inputName: string]: (string | InputDefinition)[] };
-    /**
-     * Targets associated to the project
-     */
-    targets?: { [targetName: string]: TargetConfiguration };
-    /**
-     * Project's tags used for enforcing module boundaries
-     */
-    tags?: string[];
-    /**
-     * Projects on which this node implicitly depends on
-     */
-    implicitDependencies?: string[];
-    /**
-     * Files associated to the project
-     */
-    files: FileData[];
+  data: ProjectConfiguration & {
+    description?: string;
   };
+}
+
+export function isProjectGraphProjectNode(
+  node: ProjectGraphProjectNode | ProjectGraphExternalNode
+): node is ProjectGraphProjectNode {
+  return node.type === 'app' || node.type === 'e2e' || node.type === 'lib';
 }
 
 /**
  * A node describing an external dependency
+ * `name` has as form of:
+ * - `npm:packageName` for root dependencies or
+ * - `npm:packageName@version` for nested transitive dependencies
+ *
+ * This is vital for our node discovery to always point to root dependencies,
+ * while allowing tracking of the full tree of different nested versions
+ *
  */
 export interface ProjectGraphExternalNode {
-  type: 'npm';
-  name: `npm:${string}`;
+  type: string; // not app, e2e, or lib
+  name: string;
   data: {
     version: string;
     packageName: string;
+    hash?: string;
   };
+}
+
+export function isProjectGraphExternalNode(
+  node: ProjectGraphProjectNode | ProjectGraphExternalNode
+): node is ProjectGraphExternalNode {
+  return isProjectGraphProjectNode(node) === false;
 }
 
 /**
@@ -134,12 +152,18 @@ export interface ProjectGraphDependency {
 
 /**
  * Additional information to be used to process a project graph
+ * @deprecated The {@link ProjectGraphProcessor} is deprecated. This will be removed in Nx 20.
  */
 export interface ProjectGraphProcessorContext {
   /**
    * Workspace information such as projects and configuration
+   * @deprecated use {@link projectsConfigurations} or {@link nxJsonConfiguration} instead
    */
   workspace: Workspace;
+
+  projectsConfigurations: ProjectsConfigurations;
+
+  nxJsonConfiguration: NxJsonConfiguration;
 
   /**
    * All files in the workspace
@@ -154,6 +178,7 @@ export interface ProjectGraphProcessorContext {
 
 /**
  * A function that produces an updated ProjectGraph
+ * @deprecated Use {@link CreateNodes} and {@link CreateDependencies} instead. This will be removed in Nx 20.
  */
 export type ProjectGraphProcessor = (
   currentGraph: ProjectGraph,

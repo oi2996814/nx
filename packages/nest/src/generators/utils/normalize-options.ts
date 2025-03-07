@@ -1,27 +1,55 @@
-import type { Tree } from '@nrwl/devkit';
-import { names, readProjectConfiguration } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import { determineArtifactNameAndDirectoryOptions } from '@nx/devkit/src/generators/artifact-name-and-directory-utils';
 import type {
-  NestGeneratorOptions,
+  Language,
+  NestGeneratorWithLanguageOption,
   NormalizedOptions,
   UnitTestRunner,
 } from './types';
 
-export function normalizeOptions(
+export async function normalizeOptions(
   tree: Tree,
-  options: NestGeneratorOptions
-): NormalizedOptions {
-  const { sourceRoot } = readProjectConfiguration(tree, options.project);
+  options: NestGeneratorWithLanguageOption,
+  normalizationOptions: {
+    allowedFileExtensions?: Array<'js' | 'ts'>;
+    skipLanguageOption?: boolean;
+    suffix?: string;
+  } = {}
+): Promise<NormalizedOptions> {
+  const {
+    allowedFileExtensions = ['js', 'ts'],
+    skipLanguageOption = false,
+    suffix,
+  } = normalizationOptions;
 
-  const normalizedOptions: NormalizedOptions = {
+  const { directory, artifactName, fileExtension } =
+    await determineArtifactNameAndDirectoryOptions(tree, {
+      path: options.path,
+      allowedFileExtensions,
+      fileExtension: options.language === 'js' ? 'js' : 'ts',
+      js: options.language ? options.language === 'js' : undefined,
+      jsOptionName: 'language',
+    });
+
+  options.path = undefined; // Now that we have `directory` we don't need `path`
+
+  if (!skipLanguageOption) {
+    // we assign the language based on the normalized file extension
+    options.language = fileExtension as Language;
+  }
+
+  let name = artifactName;
+  if (suffix && artifactName.endsWith(`.${suffix}`)) {
+    // strip the suffix if it exists, the nestjs schematic will always add it
+    name = artifactName.replace(`.${suffix}`, '');
+  }
+
+  return {
     ...options,
-    flat: options.flat,
-    name: names(options.name).fileName,
-    path: options.directory,
-    skipFormat: options.skipFormat,
-    sourceRoot,
+    flat: true,
+    name,
+    sourceRoot: directory,
   };
-
-  return normalizedOptions;
 }
 
 export function unitTestRunnerToSpec(

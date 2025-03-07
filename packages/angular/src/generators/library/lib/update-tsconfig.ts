@@ -1,61 +1,35 @@
-import {
-  getWorkspaceLayout,
-  joinPathFragments,
-  Tree,
-  updateJson,
-} from '@nrwl/devkit';
-import { getRootTsConfigPathInTree } from '@nrwl/workspace/src/utilities/typescript';
+import type { Tree } from '@nx/devkit';
+import { updateJson } from '@nx/devkit';
+import { getRelativePathToRootTsConfig } from '@nx/js';
 import { NormalizedSchema } from './normalized-schema';
-
-function updateRootConfig(
-  host: Tree,
-  options: NormalizedSchema['libraryOptions']
-) {
-  updateJson(host, getRootTsConfigPathInTree(host), (json) => {
-    const c = json.compilerOptions;
-    c.paths = c.paths || {};
-    delete c.paths[options.name];
-
-    if (c.paths[options.importPath]) {
-      throw new Error(
-        `You already have a library using the import path "${options.importPath}". Make sure to specify a unique one.`
-      );
-    }
-
-    c.paths[options.importPath] = [
-      joinPathFragments(
-        getWorkspaceLayout(host).libsDir,
-        options.projectDirectory,
-        '/src/index.ts'
-      ),
-    ];
-
-    return json;
-  });
-}
+import {
+  extractTsConfigBase,
+  updateProjectRootTsConfig,
+} from '../../utils/update-project-root-tsconfig';
 
 function updateProjectConfig(
   host: Tree,
   options: NormalizedSchema['libraryOptions']
 ) {
   updateJson(host, `${options.projectRoot}/tsconfig.lib.json`, (json) => {
-    json.include = ['**/*.ts'];
+    json.include = ['src/**/*.ts'];
     json.exclude = [
       ...new Set([
         ...(json.exclude || []),
         'jest.config.ts',
-        '**/*.test.ts',
-        '**/*.spec.ts',
+        'src/**/*.test.ts',
+        'src/**/*.spec.ts',
       ]),
     ];
     return json;
   });
 
   // tsconfig.json
-  updateJson(host, `${options.projectRoot}/tsconfig.json`, (json) => ({
-    ...json,
-    compilerOptions: { ...json.compilerOptions, target: 'es2020' },
-  }));
+  updateProjectRootTsConfig(
+    host,
+    options.projectRoot,
+    getRelativePathToRootTsConfig(host, options.projectRoot)
+  );
 }
 
 function updateProjectIvyConfig(
@@ -79,7 +53,7 @@ export function updateTsConfig(
   host: Tree,
   options: NormalizedSchema['libraryOptions']
 ) {
-  updateRootConfig(host, options);
+  extractTsConfigBase(host);
   updateProjectConfig(host, options);
   updateProjectIvyConfig(host, options);
 }

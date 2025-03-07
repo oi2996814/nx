@@ -1,40 +1,51 @@
-import { Linter } from '@nrwl/linter';
-import { SupportedStyles } from '../../../typings/style';
+import type { names } from '@nx/devkit';
+import type { Linter, LinterType } from '@nx/eslint';
+import type { SupportedStyles } from '../../../typings/style';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   style: SupportedStyles;
-  skipFormat: boolean;
-  directory?: string;
+  skipFormat?: boolean;
   tags?: string;
-  unitTestRunner: 'jest' | 'none';
-  /**
-   * @deprecated
-   */
-  babelJest?: boolean;
-  e2eTestRunner: 'cypress' | 'none';
-  linter: Linter;
-  pascalCaseFiles?: boolean;
+  unitTestRunner?: 'jest' | 'vitest' | 'none';
+  inSourceTests?: boolean;
+  e2eTestRunner: 'cypress' | 'playwright' | 'none';
+  linter: Linter | LinterType;
   classComponent?: boolean;
   routing?: boolean;
-  skipWorkspaceJson?: boolean;
+  skipNxJson?: boolean;
   js?: boolean;
   globalCss?: boolean;
   strict?: boolean;
   setParserOptionsProject?: boolean;
-  standaloneConfig?: boolean;
   compiler?: 'babel' | 'swc';
   remotes?: string[];
   devServerPort?: number;
-  skipDefaultProject?: boolean;
+  skipPackageJson?: boolean;
+  rootProject?: boolean;
+  bundler?: 'webpack' | 'vite' | 'rspack' | 'rsbuild';
+  minimal?: boolean;
+  // Internal options
+  addPlugin?: boolean;
+  nxCloudToken?: string;
+  useTsSolution?: boolean;
+  formatter?: 'prettier' | 'none';
+  alwaysGenerateProjectJson?: boolean; // this is needed for MF currently
 }
 
-export interface NormalizedSchema extends Schema {
+export interface NormalizedSchema<T extends Schema = Schema> extends T {
   projectName: string;
   appProjectRoot: string;
   e2eProjectName: string;
+  e2eProjectRoot: string;
+  importPath: string;
   parsedTags: string[];
   fileName: string;
   styledModule: null | SupportedStyles;
   hasStyles: boolean;
+  unitTestRunner: 'jest' | 'vitest' | 'none';
+  addPlugin?: boolean;
+  names: ReturnType<typeof names>;
+  isUsingTsSolutionConfig?: boolean;
 }

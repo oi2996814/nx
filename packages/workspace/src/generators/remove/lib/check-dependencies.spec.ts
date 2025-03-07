@@ -4,11 +4,11 @@ import {
   readProjectConfiguration,
   Tree,
   updateProjectConfiguration,
-} from '@nrwl/devkit';
+} from '@nx/devkit';
 import { Schema } from '../schema';
 import { checkDependencies } from './check-dependencies';
-import { createTreeWithEmptyV1Workspace } from '@nrwl/devkit/testing';
-import { libraryGenerator } from '../../library/library';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+// import { libraryGenerator } from '../../library/library';
 // let projectGraph: ProjectGraph;
 // jest.mock('../../../core/project-graph', () => ({
 //   ...jest.requireActual<any>('../../../core/project-graph'),
@@ -29,7 +29,7 @@ describe('empty', () => {
 //   let schema: Schema;
 //
 //   beforeEach(async () => {
-//     tree = createTreeWithEmptyV1Workspace();
+//     tree = createTreeWithEmptyWorkspace({layout: 'apps-libs'});
 //
 //     schema = {
 //       projectName: 'my-source',

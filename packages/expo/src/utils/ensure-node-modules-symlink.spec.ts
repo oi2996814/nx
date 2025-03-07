@@ -1,6 +1,6 @@
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import * as fs from 'fs';
 import { ensureNodeModulesSymlink } from './ensure-node-modules-symlink';
 
 const workspaceDir = join(tmpdir(), 'nx-react-native-test');
@@ -9,24 +9,24 @@ const appDirAbsolutePath = join(workspaceDir, appDir);
 
 describe('ensureNodeModulesSymlink', () => {
   beforeEach(() => {
-    if (fs.existsSync(workspaceDir))
-      fs.rmdirSync(workspaceDir, { recursive: true });
-    fs.mkdirSync(workspaceDir);
-    fs.mkdirSync(appDirAbsolutePath, { recursive: true });
-    fs.mkdirSync(appDirAbsolutePath, { recursive: true });
-    fs.writeFileSync(
+    if (existsSync(workspaceDir))
+      rmSync(workspaceDir, { recursive: true, force: true });
+    mkdirSync(workspaceDir, { recursive: true });
+    mkdirSync(appDirAbsolutePath, { recursive: true });
+    mkdirSync(appDirAbsolutePath, { recursive: true });
+    writeFileSync(
       join(appDirAbsolutePath, 'package.json'),
       JSON.stringify({
         name: 'myapp',
         dependencies: { 'react-native': '*' },
       })
     );
-    fs.writeFileSync(
+    writeFileSync(
       join(workspaceDir, 'package.json'),
       JSON.stringify({
         name: 'workspace',
         dependencies: {
-          '@nrwl/react-native': '9999.9.9',
+          '@nx/react-native': '9999.9.9',
           '@react-native-community/cli-platform-ios': '7777.7.7',
           '@react-native-community/cli-platform-android': '7777.7.7',
           'react-native': '0.9999.0',
@@ -36,12 +36,12 @@ describe('ensureNodeModulesSymlink', () => {
   });
 
   afterEach(() => {
-    if (fs.existsSync(workspaceDir))
-      fs.rmdirSync(workspaceDir, { recursive: true });
+    if (existsSync(workspaceDir))
+      rmSync(workspaceDir, { recursive: true, force: true });
   });
 
   it('should create symlinks', () => {
-    createNpmDirectory('@nrwl/react-native', '9999.9.9');
+    createNpmDirectory('@nx/react-native', '9999.9.9');
     createNpmDirectory(
       '@react-native-community/cli-platform-android',
       '7777.7.7'
@@ -54,7 +54,7 @@ describe('ensureNodeModulesSymlink', () => {
 
     ensureNodeModulesSymlink(workspaceDir, appDir);
 
-    expectSymlinkToExist('@nrwl/react-native');
+    expectSymlinkToExist('@nx/react-native');
     expectSymlinkToExist('react-native');
     expectSymlinkToExist('jsc-android');
     expectSymlinkToExist('hermes-engine');
@@ -64,7 +64,7 @@ describe('ensureNodeModulesSymlink', () => {
   });
 
   it('should add packages listed in workspace package.json', () => {
-    fs.writeFileSync(
+    writeFileSync(
       join(workspaceDir, 'package.json'),
       JSON.stringify({
         name: 'workspace',
@@ -73,7 +73,7 @@ describe('ensureNodeModulesSymlink', () => {
         },
       })
     );
-    createNpmDirectory('@nrwl/react-native', '9999.9.9');
+    createNpmDirectory('@nx/react-native', '9999.9.9');
     createNpmDirectory(
       '@react-native-community/cli-platform-android',
       '7777.7.7'
@@ -92,8 +92,8 @@ describe('ensureNodeModulesSymlink', () => {
 
   function createNpmDirectory(packageName, version) {
     const dir = join(workspaceDir, `node_modules/${packageName}`);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
       join(dir, 'package.json'),
       JSON.stringify({ name: packageName, version: version })
     );
@@ -102,7 +102,7 @@ describe('ensureNodeModulesSymlink', () => {
 
   function expectSymlinkToExist(packageName) {
     expect(
-      fs.existsSync(
+      existsSync(
         join(appDirAbsolutePath, `node_modules/${packageName}/package.json`)
       )
     ).toBe(true);

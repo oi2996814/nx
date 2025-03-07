@@ -1,21 +1,20 @@
 import { UnitTestRunner } from '../../../utils/test-runners';
-import type { Linter } from '@nrwl/linter';
+import type { Linter, LinterType } from '@nx/eslint';
 
 export interface NormalizedSchema {
   libraryOptions: {
-    name: string;
+    directory: string;
+    name?: string;
     addTailwind?: boolean;
     skipFormat?: boolean;
-    simpleModuleName?: boolean;
+    simpleName?: boolean;
     addModuleSpec?: boolean;
-    directory?: string;
     sourceDir?: string;
     buildable?: boolean;
     publishable?: boolean;
     importPath?: string;
     standaloneConfig?: boolean;
     spec?: boolean;
-    flat?: boolean;
     commonModule?: boolean;
     routing?: boolean;
     lazy?: boolean;
@@ -28,7 +27,7 @@ export interface NormalizedSchema {
     skipPackageJson?: boolean;
     skipPostInstall?: boolean;
     standalone?: boolean;
-    linter: Linter;
+    linter: Linter | LinterType;
     unitTestRunner: UnitTestRunner;
     prefix: string;
     fileName: string;
@@ -36,7 +35,6 @@ export interface NormalizedSchema {
     entryFile: string;
     modulePath: string;
     moduleName: string;
-    projectDirectory: string;
     parsedTags: string[];
     ngCliSchematicLibRoot: string;
     standaloneComponentName: string;
@@ -53,5 +51,6 @@ export interface NormalizedSchema {
     skipTests?: boolean;
     selector?: string;
     skipSelector?: boolean;
+    flat?: boolean;
   };
 }

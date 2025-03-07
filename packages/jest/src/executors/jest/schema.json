@@ -1,4 +1,6 @@
 {
+  "version": 2,
+  "outputCapture": "direct-nodejs",
   "title": "Jest Builder",
   "description": "Jest target options for Build Facade.",
   "cli": "nx",
@@ -51,22 +53,33 @@
     },
     "testFile": {
       "description": "The name of the file to test.",
-      "type": "string"
+      "type": "string",
+      "$default": {
+        "$source": "argv",
+        "index": 0
+      }
     },
     "tsConfig": {
-      "description": "The name of the Typescript configuration file. Set the tsconfig option in the jest config file. ",
+      "description": "The name of the Typescript configuration file.",
       "type": "string",
-      "x-deprecated": true
+      "x-deprecated": "Use the ts-jest configuration options in the jest config file instead."
     },
     "setupFile": {
-      "description": "The name of a setup file used by Jest. (use Jest config file https://jestjs.io/docs/en/configuration#setupfilesafterenv-array)",
+      "description": "The name of a setup file used by Jest.",
       "type": "string",
-      "x-deprecated": true
+      "x-deprecated": "Use the setupFilesAfterEnv option in the jest config file. https://jestjs.io/docs/en/configuration#setupfilesafterenv-array"
     },
     "bail": {
       "alias": "b",
       "description": "Exit the test suite immediately after `n` number of failing tests. (https://jestjs.io/docs/cli#--bail)",
-      "oneOf": [{ "type": "number" }, { "type": "boolean" }]
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "boolean"
+        }
+      ]
     },
     "ci": {
       "description": "Whether to run Jest in continuous integration (CI) mode. This option is on by default in most popular CI environments. It will prevent snapshots from being written unless explicitly requested. (https://jestjs.io/docs/cli#--ci)",
@@ -81,6 +94,10 @@
       "description": "Find and run the tests that cover a comma separated list of source files that were passed in as arguments. (https://jestjs.io/docs/cli#--findrelatedtests-spaceseparatedlistofsourcefiles)",
       "type": "string"
     },
+    "forceExit": {
+      "description": "Force Jest to exit after all tests have completed running. This is useful when resources set up by test code cannot be adequately cleaned up.This feature is an escape-hatch. If Jest doesn't exit at the end of a test run, it means external resources are still being held on to or timers are still pending in your code. It is advised to tear down external resources after each test to make sure Jest can shut down cleanly. You can use --detectOpenHandles to help track it down.",
+      "type": "boolean"
+    },
     "json": {
       "description": "Prints the test results in `JSON`. This mode will send all other test output and user messages to `stderr`. (https://jestjs.io/docs/cli#--json)",
       "type": "boolean"
@@ -88,7 +105,14 @@
     "maxWorkers": {
       "alias": "w",
       "description": "Specifies the maximum number of workers the worker-pool will spawn for running tests. This defaults to the number of the cores available on your machine. Useful for CI. (its usually best not to override this default) (https://jestjs.io/docs/cli#--maxworkersnumstring)",
-      "oneOf": [{ "type": "number" }, { "type": "string" }]
+      "oneOf": [
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        }
+      ]
     },
     "onlyChanged": {
       "alias": "o",
@@ -105,6 +129,10 @@
     },
     "passWithNoTests": {
       "description": "Will not fail if no tests are found (for example while using `--testPathPattern`.) (https://jestjs.io/docs/cli#--passwithnotests)",
+      "type": "boolean"
+    },
+    "randomize": {
+      "description": "Shuffle the order of the tests within a file. The shuffling is based on the seed. This option is only supported using the default jest-circus test runner.",
       "type": "boolean"
     },
     "runInBand": {

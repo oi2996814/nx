@@ -1,5 +1,4 @@
-import { AssetGlob } from '@nrwl/workspace/src/utilities/assets';
-import { CrossOriginValue } from '../../utils/webpack/write-index-html';
+import { AssetGlob } from '@nx/js/src/utils/assets/assets';
 
 export interface AssetGlobPattern {
   glob: string;
@@ -40,24 +39,19 @@ export interface OptimizationOptions {
 export interface WebpackExecutorOptions {
   additionalEntryPoints?: AdditionalEntryPoint[];
   assets?: Array<AssetGlob | string>;
-  baseHref?: string;
-  budgets?: any[];
   buildLibsFromSource?: boolean;
   commonChunk?: boolean;
   compiler?: 'babel' | 'swc' | 'tsc';
-  crossOrigin?: CrossOriginValue;
   deleteOutputPath?: boolean;
-  deployUrl?: string;
-  es2015Polyfills?: string;
   externalDependencies?: 'all' | 'none' | string[];
-  extractCss?: boolean;
   extractLicenses?: boolean;
   fileReplacements?: FileReplacement[];
-  generateIndexHtml?: boolean;
   generatePackageJson?: boolean;
-  index?: string;
-  main: string;
-  maxWorkers?: number;
+  // TODO(v21): Remove this option
+  /** @deprecated set webpackConfig and provide an explicit webpack.config.js file (See: https://nx.dev/recipes/webpack/webpack-config-setup) */
+  isolatedConfig?: boolean;
+  standardWebpackConfigFunction?: boolean;
+  main?: string;
   memoryLimit?: number;
   namedChunks?: boolean;
   optimization?: boolean | OptimizationOptions;
@@ -66,27 +60,41 @@ export interface WebpackExecutorOptions {
   outputPath: string;
   poll?: number;
   polyfills?: string;
-  postcssConfig?: string;
   progress?: boolean;
   runtimeChunk?: boolean;
-  scripts?: Array<ExtraEntryPointClass | string>;
-  sourceMap?: boolean | 'hidden';
+  sourceMap?: boolean | string;
   statsJson?: boolean;
-  stylePreprocessorOptions?: any;
-  styles?: Array<ExtraEntryPointClass | string>;
-  subresourceIntegrity?: boolean;
-  target?: 'node' | 'web';
+  target?: string;
   transformers?: TransformerEntry[];
-  tsConfig: string;
+  tsConfig?: string;
   vendorChunk?: boolean;
   verbose?: boolean;
   watch?: boolean;
   webpackConfig?: string;
+  babelConfig?: string;
+  babelUpwardRootMode?: boolean;
+  baseHref?: string;
+  crossOrigin?: 'none' | 'anonymous' | 'use-credentials';
+  deployUrl?: string;
+  extractCss?: boolean;
+  generateIndexHtml?: boolean;
+  index?: string;
+  postcssConfig?: string;
+  scripts?: Array<ExtraEntryPointClass | string>;
+  sassImplementation?: 'sass' | 'sass-embedded';
+  stylePreprocessorOptions?: any;
+  styles?: Array<ExtraEntryPointClass | string>;
+  subresourceIntegrity?: boolean;
+  publicPath?: string;
+  rebaseRootRelative?: boolean;
 }
 
 export interface NormalizedWebpackExecutorOptions
   extends WebpackExecutorOptions {
-  assets?: AssetGlobPattern[];
-  root?: string;
-  sourceRoot?: string;
+  outputFileName: string;
+  assets: AssetGlobPattern[];
+  root: string;
+  projectRoot: string;
+  sourceRoot: string;
+  useTsconfigPaths: boolean;
 }

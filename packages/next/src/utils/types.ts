@@ -17,9 +17,7 @@ export interface NextServerOptions {
   dir: string;
   staticMarkup: boolean;
   quiet: boolean;
-  conf: any;
   port: number;
-  path: string;
   hostname: string;
   customServer?: boolean;
 }
@@ -30,13 +28,19 @@ export interface FileReplacement {
 }
 
 export interface NextBuildBuilderOptions {
-  root: string;
-  outputPath: string;
-  fileReplacements: FileReplacement[];
   assets?: any[];
-  nextConfig?: string;
   buildLibsFromSource?: boolean;
+  debug?: boolean;
+  experimentalAppOnly?: boolean;
+  experimentalBuildMode?: 'compile' | 'generate';
+  fileReplacements: FileReplacement[];
+  generateLockfile?: boolean;
   includeDevDependenciesInPackageJson?: boolean;
+  nextConfig?: string;
+  outputPath: string;
+  profile?: boolean;
+  skipOverrides?: boolean;
+  skipPackageManager?: boolean;
   watch?: boolean;
 }
 
@@ -47,12 +51,15 @@ export interface NextServeBuilderOptions {
   quiet: boolean;
   buildTarget: string;
   customServerTarget?: string;
-  /** @deprecated Use customServerTarget
-   */
-  customServerPath?: string;
   hostname?: string;
-  proxyConfig?: string;
   buildLibsFromSource?: boolean;
+  keepAliveTimeout?: number;
+  turbo?: boolean;
+  experimentalHttps?: boolean;
+  experimentalHttpsKey?: string;
+  experimentalHttpsCert?: string;
+  experimentalHttpsCa?: string;
+  customServerHttps?: boolean;
 }
 
 export interface NextExportBuilderOptions {

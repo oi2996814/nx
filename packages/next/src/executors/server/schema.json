@@ -1,4 +1,6 @@
 {
+  "version": 2,
+  "outputCapture": "pipe",
   "cli": "nx",
   "title": "Next Serve",
   "description": "Serve a Next.js app.",
@@ -11,12 +13,14 @@
     },
     "buildTarget": {
       "type": "string",
-      "description": "Target which builds the application."
+      "description": "Target which builds the application.",
+      "x-priority": "important"
     },
     "port": {
       "type": "number",
       "description": "Port to listen on.",
-      "default": 4200
+      "default": 4200,
+      "x-priority": "important"
     },
     "staticMarkup": {
       "type": "boolean",
@@ -32,25 +36,44 @@
       "type": "string",
       "description": "Target which builds the custom server."
     },
-    "customServerPath": {
-      "type": "string",
-      "description": "Use a custom server script. (Use `customServerTarget` instead)",
-      "x-deprecated": true
-    },
     "hostname": {
       "type": "string",
       "description": "Hostname on which the application is served."
-    },
-    "proxyConfig": {
-      "type": "string",
-      "description": "Path to the proxy configuration file.",
-      "x-completion-type": "file"
     },
     "buildLibsFromSource": {
       "type": "boolean",
       "description": "Read buildable libraries from source instead of building them separately.",
       "default": true
+    },
+    "keepAliveTimeout": {
+      "type": "number",
+      "description": "Max milliseconds to wait before closing inactive connection."
+    },
+    "turbo": {
+      "type": "boolean",
+      "description": "Activate the incremental bundler for Next.js, which is implemented in Rust. Please note, this feature is exclusively available in development mode."
+    },
+    "experimentalHttps": {
+      "type": "boolean",
+      "description": "Enable HTTPS support for the Next.js development server."
+    },
+    "experimentalHttpsKey": {
+      "type": "string",
+      "description": "Path to a HTTPS key file."
+    },
+    "experimentalHttpsCert": {
+      "type": "string",
+      "description": "Path to a HTTPS certificate file."
+    },
+    "experimentalHttpsCa": {
+      "type": "string",
+      "description": "Path to a HTTPS certificate authority file."
+    },
+    "customServerHttps:": {
+      "type": "boolean",
+      "description": "Enable HTTPS support for the custom server."
     }
   },
-  "required": ["buildTarget"]
+  "required": ["buildTarget"],
+  "examplesFile": "../../../docs/server-next-executor-examples.md"
 }

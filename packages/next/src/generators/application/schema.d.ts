@@ -1,20 +1,25 @@
-import { Linter } from '@nrwl/linter';
-import { SupportedStyles } from '@nrwl/react';
+import type { Linter, LinterType } from '@nx/eslint';
+import type { SupportedStyles } from '@nx/react';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   style?: SupportedStyles;
-  server?: string;
   skipFormat?: boolean;
-  directory?: string;
   tags?: string;
   unitTestRunner?: 'jest' | 'none';
-  e2eTestRunner?: 'cypress' | 'none';
-  linter?: Linter;
-  skipWorkspaceJson?: boolean;
+  e2eTestRunner?: 'cypress' | 'playwright' | 'none';
+  linter?: Linter | LinterType;
   js?: boolean;
   setParserOptionsProject?: boolean;
-  standaloneConfig?: boolean;
   swc?: boolean;
   customServer?: boolean;
+  skipPackageJson?: boolean;
+  appDir?: boolean;
+  src?: boolean;
+  // Internal options
+  rootProject?: boolean;
+  addPlugin?: boolean;
+  useTsSolution?: boolean;
+  formatter?: 'prettier' | 'none';
 }

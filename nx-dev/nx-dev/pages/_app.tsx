@@ -1,4 +1,4 @@
-import { sendPageViewEvent } from '@nrwl/nx-dev/feature-analytics';
+import { sendPageViewEvent } from '@nx/nx-dev/feature-analytics';
 import { DefaultSeo } from 'next-seo';
 import { AppProps } from 'next/app';
 import Head from 'next/head';
@@ -6,6 +6,9 @@ import { useRouter } from 'next/router';
 import Script from 'next/script';
 import { useEffect } from 'react';
 import '../styles/main.css';
+import Link from 'next/link';
+import { WebinarNotifier } from '@nx/nx-dev/ui-common';
+import { FrontendObservability } from '../lib/components/frontend-observability';
 
 export default function CustomApp({
   Component,
@@ -13,54 +16,101 @@ export default function CustomApp({
 }: AppProps): JSX.Element {
   const router = useRouter();
   const gaMeasurementId = 'UA-88380372-10';
+  // RB2B ---------
+  const SCRIPT_ID = 'external-js-script';
+  const SCRIPT_BASE_URL = 'https://s3-us-west-2.amazonaws.com/b2bjsstore/b/';
+  const SCRIPT_KEY = '0NW1GH7YJ4O4'; //
+  const SCRIPT_URL = `${SCRIPT_BASE_URL}${SCRIPT_KEY}/${SCRIPT_KEY}.js.gz`;
+  useEffect(() => {
+    const handleRouteChange = () => {
+      const existingScript = document.getElementById(SCRIPT_ID);
+      if (existingScript) {
+        existingScript.remove();
+      }
+      const script = document.createElement('script');
+      script.id = SCRIPT_ID;
+      script.src = SCRIPT_URL;
+      script.async = true;
+      document.body.appendChild(script);
+    };
+    router.events.on('routeChangeComplete', handleRouteChange);
+    handleRouteChange();
+    return () => {
+      router.events.off('routeChangeComplete', handleRouteChange);
+    };
+  }, [router.events, SCRIPT_URL]);
+  // ---------
+
   useEffect(() => {
     const handleRouteChange = (url: URL) =>
       sendPageViewEvent({ gaId: gaMeasurementId, path: url.toString() });
     router.events.on('routeChangeStart', (url) => handleRouteChange(url));
     return () => router.events.off('routeChangeStart', handleRouteChange);
-  }, [router]);
+  }, [router.events, gaMeasurementId]);
   return (
     <>
-      <Head>
-        <meta name="msapplication-TileColor" content="#da532c" />
-        <meta name="theme-color" content="#ffffff" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Nx: Smart, Fast and Extensible Build System</title>
-      </Head>
+      <FrontendObservability />
       <DefaultSeo
-        title="Nx: Smart, Fast and Extensible Build System"
-        description="Next generation build system with first class monorepo support and powerful integrations."
+        title="Nx: Smart Monorepos · Fast CI"
+        description="Build system, optimized for monorepos, with AI-powered architectural awareness and advanced CI capabilities."
         openGraph={{
           url: 'https://nx.dev' + router.asPath,
-          title: 'Nx: Smart, Fast and Extensible Build System',
+          title: 'Nx: Smart Monorepos · Fast CI',
           description:
-            'Next generation build system with first class monorepo support and powerful integrations.',
+            'Build system, optimized for monorepos, with AI-powered architectural awareness and advanced CI capabilities.',
           images: [
             {
               url: 'https://nx.dev/images/nx-media.jpg',
               width: 800,
               height: 421,
-              alt: 'Nx: Smart, Fast and Extensible Build System',
+              alt: 'Nx: Smart Monorepos · Fast CI',
               type: 'image/jpeg',
             },
           ],
-          site_name: 'Nx',
+          siteName: 'Nx',
+          type: 'website',
         }}
         twitter={{
-          handle: '@nrwl_io',
           site: '@nxdevtools',
           cardType: 'summary_large_image',
         }}
+        dangerouslySetAllPagesToNoIndex={
+          process.env.NEXT_PUBLIC_NO_INDEX === 'true'
+        }
+        canonical={'https://nx.dev' + router.asPath.split('?')[0]}
       />
-      <a
+      <Head>
+        <meta name="apple-mobile-web-app-title" content="Nx" />
+        <meta name="application-name" content="Nx" />
+        <meta
+          name="msapplication-TileColor"
+          content="#DA532C"
+          key="windows-tile-color"
+        />
+        <meta
+          name="theme-color"
+          media="(prefers-color-scheme: light)"
+          content="#F8FAFC"
+        />
+        <meta
+          name="theme-color"
+          media="(prefers-color-scheme: dark)"
+          content="#0F172A"
+        />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+      </Head>
+      <Link
         id="skip-to-content-link"
         href="#main"
         tabIndex={0}
-        className="absolute top-3 left-8 -translate-y-24 rounded-md bg-green-400 px-4 py-2 text-white transition focus:translate-y-0"
+        className="absolute left-8 top-3 -translate-y-24 rounded-md bg-green-400 px-4 py-2 text-white transition focus:translate-y-0"
       >
         Skip to content
-      </a>
+      </Link>
       <Component {...pageProps} />
+      {/* <LiveStreamNotifier /> */}
+      {/*<WebinarNotifier />*/}
+
       {/* Global Site Tag (gtag.js) - Google Analytics */}
       <Script
         id="gtag-script-dependency"
@@ -81,11 +131,27 @@ export default function CustomApp({
           `,
         }}
       />
+      {/* Apollo.io Embed Code */}
+      <Script
+        type="text/javascript"
+        id="apollo-script-loader"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `function initApollo(){var n=Math.random().toString(36).substring(7),o=document.createElement("script"); o.src="https://assets.apollo.io/micro/website-tracker/tracker.iife.js?nocache="+n,o.async=!0,o.defer=!0,o.onload=function(){window.trackingFunctions.onLoad({appId:"65e1db2f1976f30300fd8b26"})},document.head.appendChild(o)}initApollo();`,
+        }}
+      />
       {/* HubSpot Analytics */}
       <Script
         id="hs-script-loader"
-        strategy="worker"
+        strategy="afterInteractive"
         src="https://js.hs-scripts.com/2757427.js"
+      />
+      {/* HubSpot FORMS Embed Code */}
+      <Script
+        type="text/javascript"
+        id="hs-forms-script-loader"
+        strategy="afterInteractive"
+        src="//js.hsforms.net/forms/v2.js"
       />
       {/* Hotjar Analytics */}
       <Script
@@ -101,6 +167,18 @@ export default function CustomApp({
           r.src=t+h._hjSettings.hjid+j+h._hjSettings.hjsv;
           a.appendChild(r);
         })(window,document,'https://static.hotjar.com/c/hotjar-','.js?sv=');`,
+        }}
+      />
+      <Script
+        id="twitter-campain-pixelcode"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `
+        !function(e,t,n,s,u,a){e.twq||(s=e.twq=function(){s.exe?s.exe.apply(s,arguments):s.queue.push(arguments);
+        },s.version='1.1',s.queue=[],u=t.createElement(n),u.async=!0,u.src='https://static.ads-twitter.com/uwt.js',
+        a=t.getElementsByTagName(n)[0],a.parentNode.insertBefore(u,a))}(window,document,'script');
+        twq('config','obtp4'); 
+        `,
         }}
       />
     </>

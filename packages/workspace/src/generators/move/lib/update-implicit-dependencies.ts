@@ -1,10 +1,8 @@
-import type { Tree } from '@nrwl/devkit';
-import { getProjects, updateProjectConfiguration } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import { getProjects, updateProjectConfiguration } from '@nx/devkit';
 import type { NormalizedSchema } from '../schema';
 
 /**
- * Updates the workspace.json file by renaming the project
- *
  * @param schema The options provided to the schematic
  */
 export function updateImplicitDependencies(

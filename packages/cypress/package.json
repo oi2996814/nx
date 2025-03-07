@@ -1,5 +1,5 @@
 {
-  "name": "@nrwl/cypress",
+  "name": "@nx/cypress",
   "version": "0.0.1",
   "private": false,
   "description": "The Nx Plugin for Cypress contains executors and generators allowing your workspace to use the powerful Cypress integration testing capabilities.",
@@ -17,9 +17,11 @@
     "Nest",
     "Jest",
     "Cypress",
-    "CLI"
+    "CLI",
+    "Front-end",
+    "Testing"
   ],
-  "main": "./index.js",
+  "main": "./index",
   "typings": "./index.d.ts",
   "author": "Victor Savkin",
   "license": "MIT",
@@ -27,32 +29,22 @@
     "url": "https://github.com/nrwl/nx/issues"
   },
   "homepage": "https://nx.dev",
-  "schematics": "./generators.json",
-  "builders": "./executors.json",
+  "generators": "./generators.json",
+  "executors": "./executors.json",
   "ng-update": {
     "requirements": {},
     "migrations": "./migrations.json"
   },
   "dependencies": {
-    "@babel/core": "^7.0.1",
-    "@babel/preset-env": "^7.0.0",
-    "@cypress/webpack-preprocessor": "^5.12.0",
-    "@nrwl/devkit": "file:../devkit",
-    "@nrwl/linter": "file:../linter",
-    "@nrwl/workspace": "file:../workspace",
-    "@phenomnomnominal/tsquery": "4.1.1",
-    "babel-loader": "^8.0.2",
-    "chalk": "4.1.0",
-    "dotenv": "~10.0.0",
-    "fork-ts-checker-webpack-plugin": "7.2.13",
-    "ts-loader": "^9.3.1",
-    "tsconfig-paths-webpack-plugin": "3.5.2",
-    "tslib": "^2.3.0",
-    "webpack": "^4 || ^5",
-    "webpack-node-externals": "^3.0.0"
+    "@nx/devkit": "file:../devkit",
+    "@nx/eslint": "file:../eslint",
+    "@nx/js": "file:../js",
+    "@phenomnomnominal/tsquery": "~5.0.1",
+    "detect-port": "^1.5.1",
+    "tslib": "^2.3.0"
   },
   "peerDependencies": {
-    "cypress": ">= 3 < 11"
+    "cypress": ">= 3 < 14"
   },
   "peerDependenciesMeta": {
     "cypress": {

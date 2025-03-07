@@ -1,64 +1,93 @@
-import * as chalk from 'chalk';
-import { output } from '../output';
-import type { CommunityPlugin, CorePlugin, PluginCapabilities } from './models';
-import { getPluginCapabilities } from './plugin-capabilities';
-import { hasElements } from './shared';
+import { join } from 'path';
+import { readNxJson } from '../../config/nx-json';
+import { ProjectConfiguration } from '../../config/workspace-json-project-json';
 import { readJsonFile } from '../fileutils';
-import { readModulePackageJson } from '../package-json';
+import { getNxRequirePaths } from '../installation-directory';
+import { PackageJson, readModulePackageJson } from '../package-json';
+import { workspaceRoot } from '../workspace-root';
+import {
+  PluginCapabilities,
+  getPluginCapabilities,
+} from './plugin-capabilities';
 
-export function getInstalledPluginsFromPackageJson(
-  workspaceRoot: string,
-  corePlugins: CorePlugin[],
-  communityPlugins: CommunityPlugin[] = []
-): Map<string, PluginCapabilities> {
-  const packageJson = readJsonFile(`${workspaceRoot}/package.json`);
-
-  const plugins = new Set([
-    ...corePlugins.map((p) => p.name),
-    ...communityPlugins.map((p) => p.name),
-    ...Object.keys(packageJson.dependencies || {}),
-    ...Object.keys(packageJson.devDependencies || {}),
-  ]);
-
-  return new Map(
-    Array.from(plugins)
-      .filter((name) => {
-        try {
-          // Check for `package.json` existence instead of requiring the module itself
-          // because malformed entries like `main`, may throw false exceptions.
-          readModulePackageJson(name, [workspaceRoot]);
-          return true;
-        } catch {
-          return false;
-        }
-      })
-      .sort()
-      .map<[string, PluginCapabilities]>((name) => [
-        name,
-        getPluginCapabilities(workspaceRoot, name),
-      ])
-      .filter(([, x]) => x && !!(x.generators || x.executors))
-  );
+export function findInstalledPlugins(): PackageJson[] {
+  const packageJsonDeps = getDependenciesFromPackageJson();
+  const nxJsonDeps = getDependenciesFromNxJson();
+  const deps = packageJsonDeps.concat(nxJsonDeps);
+  const result: PackageJson[] = [];
+  for (const dep of deps) {
+    const pluginPackageJson = getNxPluginPackageJsonOrNull(dep);
+    if (pluginPackageJson) {
+      result.push(pluginPackageJson);
+    }
+  }
+  return result.sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function listInstalledPlugins(
-  installedPlugins: Map<string, PluginCapabilities>
-) {
-  const bodyLines: string[] = [];
+function getNxPluginPackageJsonOrNull(pkg: string): PackageJson | null {
+  try {
+    const { packageJson } = readModulePackageJson(pkg, getNxRequirePaths());
+    return packageJson &&
+      [
+        'ng-update',
+        'nx-migrations',
+        'schematics',
+        'generators',
+        'builders',
+        'executors',
+      ].some((field) => field in packageJson)
+      ? packageJson
+      : null;
+  } catch {
+    return null;
+  }
+}
 
-  for (const [, p] of installedPlugins) {
-    const capabilities = [];
-    if (hasElements(p.executors)) {
-      capabilities.push('executors');
-    }
-    if (hasElements(p.generators)) {
-      capabilities.push('generators');
-    }
-    bodyLines.push(`${chalk.bold(p.name)} (${capabilities.join()})`);
+function getDependenciesFromPackageJson(
+  packageJsonPath = 'package.json'
+): string[] {
+  try {
+    const { dependencies, devDependencies } = readJsonFile(
+      join(workspaceRoot, packageJsonPath)
+    );
+    return Object.keys({ ...dependencies, ...devDependencies });
+  } catch {}
+  return [];
+}
+
+function getDependenciesFromNxJson(): string[] {
+  const { installation } = readNxJson();
+  if (!installation) {
+    return [];
+  }
+  return ['nx', ...Object.keys(installation.plugins || {})];
+}
+
+export async function getInstalledPluginsAndCapabilities(
+  workspaceRoot: string,
+  projects: Record<string, ProjectConfiguration>
+): Promise<Map<string, PluginCapabilities>> {
+  const plugins = findInstalledPlugins().map((p) => p.name);
+
+  const result = new Map<string, PluginCapabilities>();
+  for (const plugin of Array.from(plugins).sort()) {
+    try {
+      const capabilities = await getPluginCapabilities(
+        workspaceRoot,
+        plugin,
+        projects
+      );
+      if (
+        capabilities &&
+        (capabilities.executors ||
+          capabilities.generators ||
+          capabilities.projectGraphExtension ||
+          capabilities.projectInference)
+      ) {
+        result.set(plugin, capabilities);
+      }
+    } catch {}
   }
 
-  output.log({
-    title: `Installed plugins:`,
-    bodyLines: bodyLines,
-  });
+  return result;
 }

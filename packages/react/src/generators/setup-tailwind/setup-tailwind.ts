@@ -1,15 +1,13 @@
-import type { GeneratorCallback, Tree } from '@nrwl/devkit';
+import type { GeneratorCallback, Tree } from '@nx/devkit';
 import {
   addDependenciesToPackageJson,
-  convertNxGenerator,
   formatFiles,
   generateFiles,
   joinPathFragments,
   logger,
   readProjectConfiguration,
-  updateProjectConfiguration,
-} from '@nrwl/devkit';
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
+  runTasksInSerial,
+} from '@nx/devkit';
 
 import {
   autoprefixerVersion,
@@ -19,6 +17,7 @@ import {
 import type { SetupTailwindOptions } from './schema';
 import { addTailwindStyleImports } from './lib/add-tailwind-style-imports';
 import { updateProject } from './lib/update-project';
+import { join } from 'path';
 
 export async function setupTailwindGenerator(
   tree: Tree,
@@ -37,7 +36,7 @@ export async function setupTailwindGenerator(
     return;
   }
 
-  generateFiles(tree, joinPathFragments(__dirname, './files'), project.root, {
+  generateFiles(tree, join(__dirname, './files'), project.root, {
     tmpl: '',
   });
 
@@ -67,7 +66,3 @@ export async function setupTailwindGenerator(
 }
 
 export default setupTailwindGenerator;
-
-export const setupTailwindSchematic = convertNxGenerator(
-  setupTailwindGenerator
-);

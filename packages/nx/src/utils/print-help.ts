@@ -1,11 +1,15 @@
 import * as chalk from 'chalk';
 import * as stringWidth from 'string-width';
-// cliui is the CLI layout engine developed by, and used within, yargs
-import * as cliui from 'cliui';
 import { logger } from './logger';
 import { output } from './output';
 import { Schema } from './params';
 import { nxVersion } from './versions';
+import { readModulePackageJson } from './package-json';
+
+// cliui is the CLI layout engine developed by, and used within, yargs
+// the typings for cliui do not play nice with our tsconfig, it either
+// works in build or in test but not both.
+const cliui = require('cliui') as typeof import('cliui')['default'];
 
 export function printHelp(
   header: string,
@@ -90,12 +94,17 @@ function generateGeneratorOverviewOutput({
   description: string;
   aliases: string[];
 }): string {
-  const ui = cliui();
+  const ui = cliui(null);
   const overviewItemsLabelWidth =
     // Chars in labels "From" and "Name"
     4 +
     // The `:` char
     1;
+
+  let installedVersion: string;
+  try {
+    installedVersion = readModulePackageJson(pluginName).packageJson.version;
+  } catch {}
 
   ui.div(
     ...[
@@ -107,9 +116,7 @@ function generateGeneratorOverviewOutput({
       {
         text:
           pluginName +
-          (pluginName.startsWith('@nrwl/')
-            ? chalk.dim(` (v${nxVersion})`)
-            : ''),
+          (installedVersion ? chalk.dim(` (v${installedVersion})`) : ''),
         padding: [1, 0, 0, 2],
       },
     ]
@@ -152,7 +159,7 @@ function generateExecutorOverviewOutput({
   name: string;
   description: string;
 }): string {
-  const ui = cliui();
+  const ui = cliui(null);
   const overviewItemsLeftPadding = 2;
   const overviewItemsLabelWidth = overviewItemsLeftPadding + 'Executor:'.length;
 
@@ -166,9 +173,7 @@ function generateExecutorOverviewOutput({
       {
         text:
           `${pluginName}:${name}` +
-          (pluginName.startsWith('@nrwl/')
-            ? chalk.dim(` (v${nxVersion})`)
-            : ''),
+          (pluginName.startsWith('@nx/') ? chalk.dim(` (v${nxVersion})`) : ''),
         padding: [1, 0, 0, 0],
       },
     ]
@@ -200,7 +205,7 @@ const formatOptionType = (optionConfig: Schema['properties'][0]) => {
 };
 
 function generateOptionsOutput(schema: Schema): string {
-  const ui = cliui();
+  const ui = cliui(null);
   const flagAndAliasLeftPadding = 4;
   const flagAndAliasRightPadding = 4;
 
@@ -214,8 +219,10 @@ function generateOptionsOutput(schema: Schema): string {
     }
   >();
   let requiredSpaceToRenderAllFlagsAndAliases = 0;
-
-  for (const [optionName, optionConfig] of Object.entries(schema.properties)) {
+  const sorted = Object.entries(schema.properties).sort((a, b) =>
+    compareByPriority(a, b, schema)
+  );
+  for (const [optionName, optionConfig] of sorted) {
     const renderedFlagAndAlias =
       `--${optionName}` +
       (optionConfig.alias ? `, -${optionConfig.alias}` : '');
@@ -240,11 +247,13 @@ function generateOptionsOutput(schema: Schema): string {
         : ''
     }`;
 
-    optionsToRender.set(optionName, {
-      renderedFlagAndAlias,
-      renderedDescription,
-      renderedTypesAndDefault,
-    });
+    optionConfig.hidden ??= optionConfig.visible === false;
+    if (!optionConfig.hidden)
+      optionsToRender.set(optionName, {
+        renderedFlagAndAlias,
+        renderedDescription,
+        renderedTypesAndDefault,
+      });
   }
 
   ui.div({
@@ -273,7 +282,7 @@ function generateOptionsOutput(schema: Schema): string {
       {
         text: renderedTypesAndDefault,
         padding: [0, 0, 0, 0],
-        align: 'right',
+        align: 'right' as const,
       },
     ];
 
@@ -287,7 +296,7 @@ function generateExamplesOutput(schema: Schema): string {
   if (!schema.examples || schema.examples.length === 0) {
     return '';
   }
-  const ui = cliui();
+  const ui = cliui(null);
   const xPadding = 4;
 
   ui.div({
@@ -313,7 +322,7 @@ function generateExamplesOutput(schema: Schema): string {
   return ui.toString();
 }
 
-// TODO: generalize link generation so it works for non @nrwl plugins as well
+// TODO: generalize link generation so it works for non @nx plugins as well
 function generateLinkOutput({
   pluginName,
   name,
@@ -323,16 +332,57 @@ function generateLinkOutput({
   name: string;
   type: 'generators' | 'executors';
 }): string {
-  const nrwlPackagePrefix = '@nrwl/';
-  if (!pluginName.startsWith(nrwlPackagePrefix)) {
+  const nxPackagePrefix = '@nx/';
+  if (!pluginName.startsWith(nxPackagePrefix)) {
     return '';
   }
 
-  const link = `https://nx.dev/packages/${pluginName.substring(
-    nrwlPackagePrefix.length
+  const link = `https://nx.dev/nx-api/${pluginName.substring(
+    nxPackagePrefix.length
   )}/${type}/${name}`;
 
   return `\n\n${chalk.dim(
     'Find more information and examples at:'
   )} ${chalk.bold(link)}`;
+}
+
+/**
+ * sorts properties in the following order
+ * - required
+ * - x-priority: important
+ * - everything else
+ * - x-priority: internal
+ * - deprecated
+ * if two properties have equal priority, they are sorted by name
+ */
+function compareByPriority(
+  a: [string, Schema['properties'][0]],
+  b: [string, Schema['properties'][0]],
+  schema: Schema
+): number {
+  function getPriority([name, property]: [
+    string,
+    Schema['properties'][0]
+  ]): number {
+    if (schema.required?.includes(name)) {
+      return 0;
+    }
+    if (property['x-priority'] === 'important') {
+      return 1;
+    }
+    if (property['x-deprecated']) {
+      return 4;
+    }
+    if (property['x-priority'] === 'internal') {
+      return 3;
+    }
+    return 2;
+  }
+
+  const aPriority = getPriority(a);
+  const bPriority = getPriority(b);
+  if (aPriority === bPriority) {
+    return a[0].localeCompare(b[0]);
+  }
+  return aPriority - bPriority;
 }

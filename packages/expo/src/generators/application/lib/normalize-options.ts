@@ -1,48 +1,75 @@
-import { names } from '@nrwl/devkit';
+import { names, readNxJson, Tree } from '@nx/devkit';
+import {
+  determineProjectNameAndRootOptions,
+  ensureRootProjectName,
+} from '@nx/devkit/src/generators/project-name-and-root-utils';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 import { Schema } from '../schema';
 
-export interface NormalizedSchema extends Schema {
+export interface NormalizedSchema
+  extends Omit<Schema, 'name' | 'useTsSolution'> {
   className: string;
+  simpleName: string;
   projectName: string;
   appProjectRoot: string;
+  importPath: string;
   lowerCaseName: string;
   parsedTags: string[];
+  rootProject: boolean;
+  e2eProjectName: string;
+  e2eProjectRoot: string;
+  isTsSolutionSetup: boolean;
 }
 
-export function normalizeOptions(options: Schema): NormalizedSchema {
-  const { fileName, className } = names(options.name);
+export async function normalizeOptions(
+  host: Tree,
+  options: Schema
+): Promise<NormalizedSchema> {
+  await ensureRootProjectName(options, 'application');
+  const {
+    projectName,
+    names: projectNames,
+    projectRoot: appProjectRoot,
+    importPath,
+  } = await determineProjectNameAndRootOptions(host, {
+    name: options.name,
+    projectType: 'application',
+    directory: options.directory,
+  });
+  const nxJson = readNxJson(host);
+  const addPluginDefault =
+    process.env.NX_ADD_PLUGINS !== 'false' &&
+    nxJson.useInferencePlugins !== false;
+  options.addPlugin ??= addPluginDefault;
 
-  const directoryName = options.directory
-    ? names(options.directory).fileName
-    : '';
-  const projectDirectory = directoryName
-    ? `${directoryName}/${fileName}`
-    : fileName;
-
-  const appProjectName = projectDirectory.replace(new RegExp('/', 'g'), '-');
-
-  const appProjectRoot = `apps/${projectDirectory}`;
-
+  const { className } = names(projectName);
   const parsedTags = options.tags
     ? options.tags.split(',').map((s) => s.trim())
     : [];
+  const rootProject = appProjectRoot === '.';
 
-  /**
-   * if options.name is "my-app"
-   * name: "my-app", className: 'MyApp', lowerCaseName: 'myapp', displayName: 'MyApp', projectName: 'my-app', appProjectRoot: 'apps/my-app', androidProjectRoot: 'apps/my-app/android', iosProjectRoot: 'apps/my-app/ios'
-   * if options.name is "myApp"
-   * name: "my-app", className: 'MyApp', lowerCaseName: 'myapp', displayName: 'MyApp', projectName: 'my-app', appProjectRoot: 'apps/my-app', androidProjectRoot: 'apps/my-app/android', iosProjectRoot: 'apps/my-app/ios'
-   */
+  const isTsSolutionSetup = isUsingTsSolutionSetup(host);
+  const appProjectName =
+    !isTsSolutionSetup || options.name ? projectName : importPath;
+
+  const e2eProjectName = rootProject ? 'e2e' : `${appProjectName}-e2e`;
+  const e2eProjectRoot = rootProject ? 'e2e' : `${appProjectRoot}-e2e`;
+
   return {
     ...options,
     unitTestRunner: options.unitTestRunner || 'jest',
-    e2eTestRunner: options.e2eTestRunner || 'detox',
-    name: fileName,
+    e2eTestRunner: options.e2eTestRunner || 'none',
+    simpleName: projectNames.projectSimpleName,
     className,
     lowerCaseName: className.toLowerCase(),
     displayName: options.displayName || className,
     projectName: appProjectName,
     appProjectRoot,
+    importPath,
     parsedTags,
+    rootProject,
+    e2eProjectName,
+    e2eProjectRoot,
+    isTsSolutionSetup,
   };
 }

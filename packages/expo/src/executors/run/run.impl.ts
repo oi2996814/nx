@@ -1,14 +1,12 @@
-import { ExecutorContext, names } from '@nrwl/devkit';
-import { join } from 'path';
+import { ExecutorContext, names } from '@nx/devkit';
 import { ChildProcess, fork } from 'child_process';
+import { existsSync } from 'node:fs';
 import { platform } from 'os';
+import { join, resolve as pathResolve } from 'path';
 
-import { ensureNodeModulesSymlink } from '../../utils/ensure-node-modules-symlink';
-import {
-  displayNewlyAddedDepsMessage,
-  syncDeps,
-} from '../sync-deps/sync-deps.impl';
 import { ExpoRunOptions } from './schema';
+import { prebuildAsync } from '../prebuild/prebuild.impl';
+import { podInstall } from '../../utils/pod-install-task';
 
 export interface ExpoRunOutput {
   success: boolean;
@@ -23,13 +21,25 @@ export default async function* runExecutor(
   if (platform() !== 'darwin' && options.platform === 'ios') {
     throw new Error(`The run-ios build requires Mac to run`);
   }
-  const projectRoot = context.workspace.projects[context.projectName].root;
-  ensureNodeModulesSymlink(context.root, projectRoot);
-  if (options.sync) {
-    displayNewlyAddedDepsMessage(
-      context.projectName,
-      await syncDeps(context.projectName, projectRoot)
-    );
+  const projectRoot =
+    context.projectsConfigurations.projects[context.projectName].root;
+
+  if (!existsSync(join(context.root, projectRoot, options.platform))) {
+    await prebuildAsync(context.root, projectRoot, {
+      install: options.install,
+      platform: options.platform,
+      clean: options.clean,
+    });
+  }
+
+  if (options.install) {
+    const {
+      installAsync,
+    } = require('@expo/cli/build/src/install/installAsync');
+    await installAsync([], {});
+    if (options.platform === 'ios') {
+      podInstall(join(context.root, projectRoot, 'ios'));
+    }
   }
 
   try {
@@ -50,10 +60,11 @@ function runCliRun(
 ) {
   return new Promise((resolve, reject) => {
     childProcess = fork(
-      join(workspaceRoot, './node_modules/expo-cli/bin/expo.js'),
-      ['run:' + options.platform, ...createRunOptions(options)],
+      require.resolve('@expo/cli/build/bin/cli'),
+      ['run:' + options.platform, ...createRunOptions(options), '--no-install'], // pass in no-install to prevent node_modules install
       {
-        cwd: projectRoot,
+        cwd: pathResolve(workspaceRoot, projectRoot),
+        env: process.env,
       }
     );
 
@@ -74,10 +85,14 @@ function runCliRun(
   });
 }
 
-const nxOptions = ['sync', 'platform'];
+const nxOptions = ['platform', 'clean'];
 const iOSOptions = ['xcodeConfiguration', 'schema'];
 const androidOptions = ['variant'];
-
+/*
+ * run options:
+ * ios: https://github.com/expo/expo/blob/main/packages/@expo/cli/src/run/ios/index.ts
+ * android: https://github.com/expo/expo/blob/main/packages/@expo/cli/src/run/android/index.ts
+ */
 function createRunOptions(options: ExpoRunOptions) {
   return Object.keys(options).reduce((acc, k) => {
     if (
@@ -91,14 +106,10 @@ function createRunOptions(options: ExpoRunOptions) {
     {
       if (k === 'xcodeConfiguration') {
         acc.push('--configuration', v);
-      } else if (k === 'bundler') {
-        if (v === false) {
-          acc.push('--no-bundler');
-        }
       } else if (typeof v === 'boolean') {
-        if (v === true) {
-          // when true, does not need to pass the value true, just need to pass the flag in kebob case
-          acc.push(`--${names(k).fileName}`);
+        // no need to pass in the flag when it is true, pass the --no-<flag> when it is false. e.g. --no-build-cache, --no-bundler
+        if (v === false) {
+          acc.push(`--no-${names(k).fileName}`);
         }
       } else {
         acc.push(`--${names(k).fileName}`, v);

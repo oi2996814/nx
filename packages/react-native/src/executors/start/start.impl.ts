@@ -1,46 +1,27 @@
-import * as chalk from 'chalk';
-import { ExecutorContext, logger } from '@nrwl/devkit';
+import { ExecutorContext, logger } from '@nx/devkit';
 import { ChildProcess, fork } from 'child_process';
-import { join } from 'path';
-import { ensureNodeModulesSymlink } from '../../utils/ensure-node-modules-symlink';
+import { resolve as pathResolve } from 'path';
 import { isPackagerRunning } from './lib/is-packager-running';
 import { ReactNativeStartOptions } from './schema';
 
 export interface ReactNativeStartOutput {
-  baseUrl?: string;
+  port?: number;
   success: boolean;
 }
-
-let childProcess: ChildProcess;
 
 export default async function* startExecutor(
   options: ReactNativeStartOptions,
   context: ExecutorContext
 ): AsyncGenerator<ReactNativeStartOutput> {
-  const projectRoot = context.workspace.projects[context.projectName].root;
-  ensureNodeModulesSymlink(context.root, projectRoot);
+  const projectRoot =
+    context.projectsConfigurations.projects[context.projectName].root;
 
-  try {
-    const baseUrl = `http://localhost:${options.port}`;
-    const appName = context.projectName;
-    logger.info(chalk.cyan(`Packager is ready at ${baseUrl}`));
-    logger.info(
-      `Use ${chalk.bold(`nx run-android ${appName}`)} or ${chalk.bold(
-        `nx run-ios ${appName}`
-      )} to run the native app.`
-    );
+  await runCliStart(context.root, projectRoot, options);
 
-    await runCliStart(context.root, projectRoot, options);
-
-    yield {
-      baseUrl,
-      success: true,
-    };
-  } finally {
-    if (childProcess) {
-      childProcess.kill();
-    }
-  }
+  yield {
+    port: options.port,
+    success: true,
+  };
 }
 
 /*
@@ -51,10 +32,10 @@ export async function runCliStart(
   workspaceRoot: string,
   projectRoot: string,
   options: ReactNativeStartOptions
-): Promise<void> {
+): Promise<ChildProcess> {
   const result = await isPackagerRunning(options.port);
   if (result === 'running') {
-    logger.info('JS server already running.');
+    logger.info(`JS server already running on port ${options.port}.`);
   } else if (result === 'unrecognized') {
     logger.warn('JS server not recognized.');
   } else {
@@ -62,10 +43,12 @@ export async function runCliStart(
     logger.info('Starting JS server...');
 
     try {
-      await startAsync(workspaceRoot, projectRoot, options);
+      return await startAsync(workspaceRoot, projectRoot, options);
     } catch (error) {
       logger.error(
-        `Failed to start the packager server. Error details: ${error.message}`
+        `Failed to start the packager server. Error details: ${
+          error.message ?? error
+        }`
       );
       throw error;
     }
@@ -76,28 +59,37 @@ function startAsync(
   workspaceRoot: string,
   projectRoot: string,
   options: ReactNativeStartOptions
-): Promise<number> {
-  return new Promise((resolve, reject) => {
-    childProcess = fork(
-      join(workspaceRoot, './node_modules/react-native/cli.js'),
+): Promise<ChildProcess> {
+  return new Promise<ChildProcess>((resolve, reject) => {
+    const childProcess = fork(
+      require.resolve('react-native/cli.js'),
       ['start', ...createStartOptions(options)],
-      { cwd: join(workspaceRoot, projectRoot) }
+      {
+        cwd: pathResolve(workspaceRoot, projectRoot),
+        env: process.env,
+        stdio: 'inherit',
+      }
     );
-
-    // Ensure the child process is killed when the parent exits
-    process.on('exit', () => childProcess.kill());
-    process.on('SIGTERM', () => childProcess.kill());
 
     childProcess.on('error', (err) => {
       reject(err);
     });
     childProcess.on('exit', (code) => {
       if (code === 0) {
-        resolve(code);
+        resolve(childProcess);
       } else {
         reject(code);
       }
     });
+
+    const processExitListener = (signal?: number | NodeJS.Signals) => () => {
+      childProcess.kill(signal);
+      process.exit();
+    };
+    process.once('exit', (signal) => childProcess.kill(signal));
+    process.once('SIGTERM', processExitListener);
+    process.once('SIGINT', processExitListener);
+    process.once('SIGQUIT', processExitListener);
   });
 }
 

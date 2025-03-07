@@ -1,18 +1,23 @@
-import { Linter } from '@nrwl/linter';
+import type { Linter, LinterType } from '@nx/eslint';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   displayName?: string;
   style?: string;
   skipFormat: boolean; // default is false
-  directory?: string;
   tags?: string;
   unitTestRunner: 'jest' | 'none'; // default is jest
-  pascalCaseFiles?: boolean;
   classComponent?: boolean;
   js: boolean; // default is false
-  linter: Linter; // default is eslint
+  linter: Linter | LinterType; // default is eslint
   setParserOptionsProject?: boolean; // default is false
-  e2eTestRunner: 'detox' | 'none'; // default is detox
+  e2eTestRunner: 'cypress' | 'playwright' | 'detox' | 'none'; // default is none
   standaloneConfig?: boolean;
+  skipPackageJson?: boolean; // default is false
+  // Internal options
+  addPlugin?: boolean;
+  nxCloudToken?: string;
+  useTsSolution?: boolean;
+  formatter?: 'prettier' | 'none';
 }

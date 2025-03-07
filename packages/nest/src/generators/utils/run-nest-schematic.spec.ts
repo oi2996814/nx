@@ -1,21 +1,20 @@
-import type { Tree } from '@nrwl/devkit';
-import * as devkit from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import * as devkit from '@nx/devkit';
 import { runNestSchematic } from './run-nest-schematic';
 import { createTreeWithNestApplication } from './testing';
 import type { NestSchematic, NormalizedOptions } from './types';
 
 describe('runNestSchematic utility', () => {
   let tree: Tree;
-  const project = 'api';
+  const directory = 'api';
   const options: NormalizedOptions = {
     name: 'test',
-    sourceRoot: `apps/${project}/src`,
-    flat: true,
+    sourceRoot: `apps/${directory}/src`,
     spec: true,
   };
 
   beforeEach(() => {
-    tree = createTreeWithNestApplication(project);
+    tree = createTreeWithNestApplication(directory);
     jest.clearAllMocks();
   });
 

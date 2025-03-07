@@ -1,7 +1,12 @@
-import type { Target } from 'nx/src/command-line/run';
-import type { ExecutorContext } from 'nx/src/config/misc-interfaces';
-import { Workspaces } from 'nx/src/config/workspaces';
-import { combineOptionsForExecutor } from 'nx/src/utils/params';
+import { relative } from 'path';
+
+import type { ExecutorContext, Target } from 'nx/src/devkit-exports';
+
+import {
+  calculateDefaultProjectName,
+  combineOptionsForExecutor,
+  getExecutorInformation,
+} from 'nx/src/devkit-internals';
 
 /**
  * Reads and combines options for a given target.
@@ -12,16 +17,31 @@ export function readTargetOptions<T = any>(
   { project, target, configuration }: Target,
   context: ExecutorContext
 ): T {
-  const projectConfiguration = context.workspace.projects[project];
+  const projectConfiguration = context.projectsConfigurations.projects[project];
+
+  if (!projectConfiguration) {
+    throw new Error(`Unable to find project ${project}`);
+  }
+
   const targetConfiguration = projectConfiguration.targets[target];
 
-  const ws = new Workspaces(context.root);
-  const [nodeModule, executorName] = targetConfiguration.executor.split(':');
-  const { schema } = ws.readExecutor(nodeModule, executorName);
+  if (!targetConfiguration) {
+    throw new Error(`Unable to find target ${target} for project ${project}`);
+  }
 
-  const defaultProject = ws.calculateDefaultProjectName(
+  const [nodeModule, executorName] = targetConfiguration.executor.split(':');
+  const { schema } = getExecutorInformation(
+    nodeModule,
+    executorName,
+    context.root,
+    context.projectsConfigurations?.projects
+  );
+
+  const defaultProject = calculateDefaultProjectName(
     context.cwd,
-    context.workspace
+    context.root,
+    { version: 2, projects: context.projectsConfigurations.projects },
+    context.nxJsonConfiguration
   );
 
   return combineOptionsForExecutor(
@@ -30,6 +50,6 @@ export function readTargetOptions<T = any>(
     targetConfiguration,
     schema,
     defaultProject,
-    ws.relativeCwd(context.cwd)
+    relative(context.root, context.cwd)
   ) as T;
 }

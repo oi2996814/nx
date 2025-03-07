@@ -1,34 +1,30 @@
 import {
+  addDependenciesToPackageJson,
   formatFiles,
   getProjects,
-  joinPathFragments,
-  readProjectConfiguration,
-  readWorkspaceConfiguration,
+  runTasksInSerial,
+  stripIndents,
   Tree,
-} from '@nrwl/devkit';
-import type { Schema } from './schema';
-import applicationGenerator from '../application/application';
-import { getMFProjects } from '../../utils/get-mf-projects';
-import { normalizeProjectName } from '../utils/project';
-import { setupMf } from '../setup-mf/setup-mf';
+} from '@nx/devkit';
+import {
+  determineProjectNameAndRootOptions,
+  ensureRootProjectName,
+} from '@nx/devkit/src/generators/project-name-and-root-utils';
+import { assertNotUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
+import { swcHelpersVersion } from '@nx/js/src/utils/versions';
 import { E2eTestRunner } from '../../utils/test-runners';
+import { applicationGenerator } from '../application/application';
+import { setupMf } from '../setup-mf/setup-mf';
+import { addMfEnvToTargetDefaultInputs } from '../utils/add-mf-env-to-inputs';
+import { findNextAvailablePort, updateSsrSetup } from './lib';
+import type { Schema } from './schema';
 
-function findNextAvailablePort(tree: Tree) {
-  const mfProjects = getMFProjects(tree);
+export async function remote(tree: Tree, schema: Schema) {
+  assertNotUsingTsSolutionSetup(tree, 'angular', 'remote');
 
-  const ports = new Set<number>([4200]);
-  for (const mfProject of mfProjects) {
-    const { targets } = readProjectConfiguration(tree, mfProject);
-    const port = targets?.serve?.options?.port ?? 4200;
-    ports.add(port);
-  }
+  const { typescriptConfiguration = true, ...options }: Schema = schema;
+  options.standalone = options.standalone ?? true;
 
-  const nextAvailablePort = Math.max(...ports) + 1;
-
-  return nextAvailablePort;
-}
-
-export default async function remote(tree: Tree, options: Schema) {
   const projects = getProjects(tree);
   if (options.host && !projects.has(options.host)) {
     throw new Error(
@@ -36,21 +32,40 @@ export default async function remote(tree: Tree, options: Schema) {
     );
   }
 
-  const appName = normalizeProjectName(options.name, options.directory);
+  await ensureRootProjectName(options, 'application');
+  const { projectName: remoteProjectName } =
+    await determineProjectNameAndRootOptions(tree, {
+      name: options.name,
+      projectType: 'application',
+      directory: options.directory,
+    });
+
+  const REMOTE_NAME_REGEX = '^[a-zA-Z_$][a-zA-Z_$0-9]*$';
+  const remoteNameRegex = new RegExp(REMOTE_NAME_REGEX);
+  if (!remoteNameRegex.test(remoteProjectName)) {
+    throw new Error(
+      stripIndents`Invalid remote name: ${remoteProjectName}. Remote project names must:
+       - Start with a letter, dollar sign ($) or underscore (_)
+       - Followed by any valid character (letters, digits, underscores, or dollar signs)
+      The regular expression used is ${REMOTE_NAME_REGEX}.`
+    );
+  }
   const port = options.port ?? findNextAvailablePort(tree);
 
-  const installTask = await applicationGenerator(tree, {
+  const appInstallTask = await applicationGenerator(tree, {
     ...options,
+    standalone: options.standalone,
     routing: true,
-    skipDefaultProject: true,
     port,
+    skipFormat: true,
+    bundler: 'webpack',
   });
 
   const skipE2E =
     !options.e2eTestRunner || options.e2eTestRunner === E2eTestRunner.None;
 
   await setupMf(tree, {
-    appName,
+    appName: remoteProjectName,
     mfType: 'remote',
     routing: true,
     host: options.host,
@@ -58,97 +73,43 @@ export default async function remote(tree: Tree, options: Schema) {
     skipPackageJson: options.skipPackageJson,
     skipFormat: true,
     skipE2E,
-    e2eProjectName: skipE2E ? undefined : `${appName}-e2e`,
+    e2eProjectName: skipE2E ? undefined : `${remoteProjectName}-e2e`,
     standalone: options.standalone,
+    prefix: options.prefix,
+    typescriptConfiguration,
+    setParserOptionsProject: options.setParserOptionsProject,
   });
 
-  removeDeadCode(tree, options);
+  const installTasks = [appInstallTask];
+  if (!options.skipPackageJson) {
+    const installSwcHelpersTask = addDependenciesToPackageJson(
+      tree,
+      {},
+      {
+        '@swc/helpers': swcHelpersVersion,
+      }
+    );
+    installTasks.push(installSwcHelpersTask);
+  }
+
+  if (options.ssr) {
+    let ssrInstallTask = await updateSsrSetup(tree, {
+      appName: remoteProjectName,
+      port,
+      typescriptConfiguration,
+      standalone: options.standalone,
+      skipPackageJson: options.skipPackageJson,
+    });
+    installTasks.push(ssrInstallTask);
+  }
+
+  addMfEnvToTargetDefaultInputs(tree);
 
   if (!options.skipFormat) {
     await formatFiles(tree);
   }
 
-  return installTask;
+  return runTasksInSerial(...installTasks);
 }
 
-function removeDeadCode(tree: Tree, options: Schema) {
-  const projectName = normalizeProjectName(options.name, options.directory);
-  const project = readProjectConfiguration(tree, projectName);
-
-  ['css', 'less', 'scss', 'sass'].forEach((style) => {
-    const pathToComponentStyle = joinPathFragments(
-      project.sourceRoot,
-      `app/app.component.${style}`
-    );
-    if (tree.exists(pathToComponentStyle)) {
-      tree.delete(pathToComponentStyle);
-    }
-  });
-
-  tree.rename(
-    joinPathFragments(project.sourceRoot, 'app/nx-welcome.component.ts'),
-    joinPathFragments(
-      project.sourceRoot,
-      'app/remote-entry/nx-welcome.component.ts'
-    )
-  );
-  tree.delete(
-    joinPathFragments(project.sourceRoot, 'app/app.component.spec.ts')
-  );
-  tree.delete(joinPathFragments(project.sourceRoot, 'app/app.component.html'));
-
-  const pathToAppComponent = joinPathFragments(
-    project.sourceRoot,
-    'app/app.component.ts'
-  );
-  if (!options.standalone) {
-    const component =
-      tree
-        .read(pathToAppComponent, 'utf-8')
-        .split(options.inlineTemplate ? 'template' : 'templateUrl')[0] +
-      `template: '<router-outlet></router-outlet>'
-
-})
-export class AppComponent {}`;
-
-    tree.write(pathToAppComponent, component);
-
-    tree.write(
-      joinPathFragments(project.sourceRoot, 'app/app.module.ts'),
-      `import { NgModule } from '@angular/core';
-import { BrowserModule } from '@angular/platform-browser';
-import { RouterModule } from '@angular/router';
-import { AppComponent } from './app.component';
-
-@NgModule({
- declarations: [AppComponent],
- imports: [
-   BrowserModule,
-   RouterModule.forRoot([{
-     path: '',
-     loadChildren: () => import('./remote-entry/entry.module').then(m => m.RemoteEntryModule)
-   }], { initialNavigation: 'enabledBlocking' }),
- ],
- providers: [],
- bootstrap: [AppComponent],
-})
-export class AppModule {}`
-    );
-  } else {
-    tree.delete(pathToAppComponent);
-
-    const prefix = options.prefix ?? readWorkspaceConfiguration(tree).npmScope;
-    const remoteEntrySelector = `${prefix}-${projectName}-entry`;
-
-    const pathToIndexHtml = project.targets.build.options.index;
-    const indexContents = tree.read(pathToIndexHtml, 'utf-8');
-
-    const rootSelectorRegex = new RegExp(`${prefix}-root`, 'ig');
-    const newIndexContents = indexContents.replace(
-      rootSelectorRegex,
-      remoteEntrySelector
-    );
-
-    tree.write(pathToIndexHtml, newIndexContents);
-  }
-}
+export default remote;

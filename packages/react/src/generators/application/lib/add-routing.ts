@@ -1,31 +1,40 @@
-import * as ts from 'typescript';
-import { addInitialRoutes } from '../../../utils/ast-utils';
-import { NormalizedSchema } from '../schema';
-import {
-  reactRouterDomVersion,
-  typesReactRouterDomVersion,
-} from '../../../utils/versions';
 import {
   joinPathFragments,
   Tree,
   applyChangesToString,
   addDependenciesToPackageJson,
-} from '@nrwl/devkit';
+} from '@nx/devkit';
+import { ensureTypescript } from '@nx/js/src/utils/typescript/ensure-typescript';
+import { addInitialRoutes } from '../../../utils/ast-utils';
+import { reactRouterDomVersion } from '../../../utils/versions';
+import { maybeJs } from '../../../utils/maybe-js';
+import { NormalizedSchema } from '../schema';
+
+let tsModule: typeof import('typescript');
 
 export function addRouting(host: Tree, options: NormalizedSchema) {
   if (!options.routing) {
     return () => {};
   }
 
+  if (!tsModule) {
+    tsModule = ensureTypescript();
+  }
   const appPath = joinPathFragments(
     options.appProjectRoot,
-    maybeJs(options, `src/app/${options.fileName}.tsx`)
+    maybeJs(
+      {
+        js: options.js,
+        useJsx: options.bundler === 'vite' || options.bundler === 'rspack',
+      },
+      `src/app/${options.fileName}.tsx`
+    )
   );
   const appFileContent = host.read(appPath, 'utf-8');
-  const appSource = ts.createSourceFile(
+  const appSource = tsModule.createSourceFile(
     appPath,
     appFileContent,
-    ts.ScriptTarget.Latest,
+    tsModule.ScriptTarget.Latest,
     true
   );
 
@@ -35,15 +44,13 @@ export function addRouting(host: Tree, options: NormalizedSchema) {
   );
   host.write(appPath, changes);
 
-  return addDependenciesToPackageJson(
-    host,
-    { 'react-router-dom': reactRouterDomVersion },
-    { '@types/react-router-dom': typesReactRouterDomVersion }
-  );
-}
+  if (!options.skipPackageJson) {
+    return addDependenciesToPackageJson(
+      host,
+      { 'react-router-dom': reactRouterDomVersion },
+      {}
+    );
+  }
 
-function maybeJs(options: NormalizedSchema, path: string): string {
-  return options.js && (path.endsWith('.ts') || path.endsWith('.tsx'))
-    ? path.replace(/\.tsx?$/, '.js')
-    : path;
+  return () => {};
 }

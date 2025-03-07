@@ -1,57 +1,38 @@
-import { Tree, readJson, NxJsonConfiguration, updateJson } from '@nrwl/devkit';
-import { createTreeWithEmptyWorkspace } from '@nrwl/devkit/testing';
+import 'nx/src/internal-testing-utils/mock-project-graph';
+
+import { Tree, readJson, ProjectGraph } from '@nx/devkit';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+import { nxVersion, rollupVersion } from '../../utils/versions';
 
 import { rollupInitGenerator } from './init';
+
+let projectGraph: ProjectGraph;
+jest.mock('@nx/devkit', () => ({
+  ...jest.requireActual<any>('@nx/devkit'),
+  createProjectGraphAsync: jest.fn().mockImplementation(async () => {
+    return projectGraph;
+  }),
+}));
 
 describe('rollupInitGenerator', () => {
   let tree: Tree;
 
   beforeEach(async () => {
-    tree = createTreeWithEmptyWorkspace();
+    projectGraph = {
+      nodes: {},
+      dependencies: {},
+    };
+    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
   });
 
-  it('should support babel', async () => {
-    updateJson<NxJsonConfiguration>(tree, 'nx.json', (json) => {
-      json.namedInputs = {
-        sharedGlobals: ['{workspaceRoot}/exiting-file.json'],
-      };
-      return json;
-    });
-
-    await rollupInitGenerator(tree, { compiler: 'babel' });
-
-    expect(tree.exists('babel.config.json'));
-    const sharedGlobals = readJson<NxJsonConfiguration>(tree, 'nx.json')
-      .namedInputs.sharedGlobals;
-    expect(sharedGlobals).toContain('{workspaceRoot}/exiting-file.json');
-    expect(sharedGlobals).toContain('{workspaceRoot}/babel.config.json');
-  });
-
-  it('should support swc', async () => {
-    await rollupInitGenerator(tree, { compiler: 'swc' });
+  it('should install deps', async () => {
+    await rollupInitGenerator(tree, {});
 
     const packageJson = readJson(tree, 'package.json');
     expect(packageJson).toEqual({
       name: expect.any(String),
       dependencies: {},
-      devDependencies: {
-        '@swc/helpers': expect.any(String),
-        '@swc/core': expect.any(String),
-        'swc-loader': expect.any(String),
-      },
-    });
-  });
-
-  it('should support tsc', async () => {
-    await rollupInitGenerator(tree, { compiler: 'tsc' });
-
-    const packageJson = readJson(tree, 'package.json');
-    expect(packageJson).toEqual({
-      name: expect.any(String),
-      dependencies: {},
-      devDependencies: {
-        tslib: expect.any(String),
-      },
+      devDependencies: { '@nx/rollup': nxVersion, rollup: rollupVersion },
     });
   });
 });

@@ -1,0 +1,14 @@
+<%_ if (style !== 'none') { _%>
+import './styles.<%= style %>';
+<%_ }
+if (routing) { _%>
+import router from './router';
+<%_ } _%>
+import { createApp } from 'vue';
+import App from './app/App.vue';
+
+const app = createApp(App);
+<%_ if (routing) { _%>
+app.use(router);
+<%_ } _%>
+app.mount('#root');

@@ -1,5 +1,12 @@
-import type { NxJsonConfiguration } from './nx-json';
+import type { PackageJson } from '../utils/package-json';
+import type {
+  NxJsonConfiguration,
+  NxReleaseVersionConfiguration,
+} from './nx-json';
 
+/**
+ * @deprecated use ProjectsConfigurations or NxJsonConfiguration
+ */
 export interface Workspace extends ProjectsConfigurations, NxJsonConfiguration {
   projects: Record<string, ProjectConfiguration>;
 }
@@ -24,11 +31,6 @@ export interface ProjectsConfigurations {
   projects: {
     [projectName: string]: ProjectConfiguration;
   };
-}
-
-export interface RawProjectsConfigurations
-  extends Omit<ProjectsConfigurations, 'projects'> {
-  projects: { [projectName: string]: ProjectConfiguration | string };
 }
 
 /**
@@ -76,7 +78,7 @@ export interface ProjectConfiguration {
    *
    * ```
    * {
-   *   "@nrwl/react": {
+   *   "@nx/react": {
    *     "library": {
    *       "style": "scss"
    *     }
@@ -97,22 +99,83 @@ export interface ProjectConfiguration {
   namedInputs?: { [inputName: string]: (string | InputDefinition)[] };
 
   /**
-   * List of tags used by nx-enforce-module-boundaries / project graph
+   * List of tags used by enforce-module-boundaries / project graph
    */
   tags?: string[];
+
+  /**
+   * Project specific configuration for `nx release`
+   */
+  release?: {
+    version?: Pick<
+      NxReleaseVersionConfiguration,
+      'generator' | 'generatorOptions'
+    >;
+  };
+
+  /**
+   * Metadata about the project
+   */
+  metadata?: ProjectMetadata;
+}
+
+export interface ProjectMetadata {
+  description?: string;
+  technologies?: string[];
+  targetGroups?: Record<string, string[]>;
+  owners?: {
+    [ownerId: string]: {
+      ownedFiles: {
+        files: ['*'] | string[];
+        fromConfig?: {
+          filePath: string;
+          location: {
+            startLine: number;
+            endLine: number;
+          };
+        };
+      }[];
+    };
+  };
+  js?: {
+    packageName: string;
+    packageExports?: PackageJson['exports'];
+    packageMain?: string;
+    isInPackageManagerWorkspaces?: boolean;
+  };
+}
+
+export interface TargetMetadata {
+  [k: string]: any;
+
+  description?: string;
+  technologies?: string[];
+  nonAtomizedTarget?: string;
+  help?: {
+    command: string;
+    example: {
+      options?: Record<string, unknown>;
+      args?: string[];
+    };
+  };
 }
 
 export interface TargetDependencyConfig {
   /**
-   * This the projects that the targets belong to
-   *
-   * 'self': This target depends on another target of the same project
-   * 'deps': This target depends on targets of the projects of it's deps.
+   * A list of projects that have `target`.
+   * Should not be specified together with `dependencies`.
    */
-  projects: 'self' | 'dependencies';
+  projects?: string[] | string;
 
   /**
-   * The name of the target
+   * If true, the target will be executed for each project that this project depends on.
+   * Should not be specified together with `projects`.
+   */
+  dependencies?: boolean;
+
+  /**
+   * The name of the target to run. If `projects` and `dependencies` are not specified,
+   * the target will be executed for the same project the the current target is running on`.
    */
   target: string;
 
@@ -123,9 +186,13 @@ export interface TargetDependencyConfig {
 }
 
 export type InputDefinition =
-  | { input: string; projects: 'self' | 'dependencies' }
+  | { input: string; projects: string | string[] }
+  | { input: string; dependencies: true }
+  | { input: string }
   | { fileset: string }
   | { runtime: string }
+  | { externalDependencies: string[] }
+  | { dependentTasksOutputFiles: string; transitive?: boolean }
   | { env: string };
 
 /**
@@ -135,9 +202,14 @@ export interface TargetConfiguration<T = any> {
   /**
    * The executor/builder used to implement the target.
    *
-   * Example: '@nrwl/web:rollup'
+   * Example: '@nx/rollup:rollup'
    */
-  executor: string;
+  executor?: string;
+
+  /**
+   * Used as a shorthand for nx:run-commands, a command to run.
+   */
+  command?: string;
 
   /**
    * List of the target's outputs. The outputs will be cached by the Nx computation
@@ -169,4 +241,26 @@ export interface TargetConfiguration<T = any> {
    * A default named configuration to use when a target configuration is not provided.
    */
   defaultConfiguration?: string;
+
+  /**
+   * Determines if Nx is able to cache a given target.
+   */
+  cache?: boolean;
+
+  /**
+   * Metadata about the target
+   */
+  metadata?: TargetMetadata;
+
+  /**
+   * Whether this target can be run in parallel with other tasks
+   * Default is true
+   */
+  parallelism?: boolean;
+
+  /**
+   * List of generators to run before the target to ensure the workspace
+   * is up to date.
+   */
+  syncGenerators?: string[];
 }

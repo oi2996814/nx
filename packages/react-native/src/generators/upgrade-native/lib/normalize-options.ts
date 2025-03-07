@@ -1,4 +1,4 @@
-import { names, offsetFromRoot } from '@nrwl/devkit';
+import { names, offsetFromRoot } from '@nx/devkit';
 import { UpgradeNativeConfigureSchema } from '../schema';
 
 export interface NormalizedSchema {
@@ -8,7 +8,7 @@ export interface NormalizedSchema {
   lowerCaseName: string;
   entryFile: string;
   entryFileIos: string;
-  e2eTestRunner: 'detox' | 'none';
+  e2eTestRunner: 'cypress' | 'playwright' | 'detox' | 'none';
   offsetFromRoot: string;
 }
 

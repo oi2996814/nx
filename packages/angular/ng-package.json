@@ -3,15 +3,17 @@
   "lib": {
     "entryFile": "index.ts"
   },
+  "dest": "../../build/packages/angular",
+  "deleteDestPath": false,
   "allowedNonPeerDependencies": [
-    "@nrwl/",
+    "@nx/",
     "@angular-devkit",
     "@angular-eslint/",
+    "@module-federation/enhanced",
     "@schematics",
     "@phenomnomnominal/tsquery",
     "@typescript-eslint/",
-    "chalk",
-    "chokidar",
+    "picocolors",
     "ignore",
     "minimatch",
     "rxjs-for-await",
@@ -20,8 +22,14 @@
     "tsconfig-paths",
     "semver",
     "webpack",
+    "express",
+    "http-proxy-middleware",
     "http-server",
-    "magic-string"
+    "magic-string",
+    "enquirer",
+    "find-cache-dir",
+    "piscina",
+    "webpack"
   ],
   "keepLifecycleScripts": true
 }

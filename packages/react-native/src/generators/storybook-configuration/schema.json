@@ -1,27 +1,44 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "cli": "nx",
   "$id": "NxReactNativeStorybookConfigure",
   "title": "React native Storybook configuration",
   "description": "Set up Storybook for a React-Native app or library.",
   "type": "object",
   "properties": {
-    "name": {
+    "project": {
       "type": "string",
-      "aliases": ["project", "projectName"],
+      "aliases": ["name", "projectName"],
       "description": "Project for which to generate Storybook configuration.",
       "$default": {
         "$source": "argv",
         "index": 0
       },
       "x-prompt": "For which project do you want to generate Storybook configuration?",
-      "x-dropdown": "projects"
+      "x-dropdown": "projects",
+      "x-priority": "important"
+    },
+    "interactionTests": {
+      "type": "boolean",
+      "description": "Set up Storybook interaction tests.",
+      "x-prompt": "Do you want to set up Storybook interaction tests?",
+      "x-priority": "important",
+      "alias": ["configureTestRunner"],
+      "default": true
     },
     "generateStories": {
       "type": "boolean",
-      "description": "Automatically generate *.stories.ts files for components declared in this project?",
+      "description": "Automatically generate `*.stories.ts` files for components declared in this project?",
       "x-prompt": "Automatically generate *.stories.ts files for components declared in this project?",
-      "default": true
+      "default": true,
+      "x-priority": "important"
+    },
+    "configureStaticServe": {
+      "type": "boolean",
+      "description": "Specifies whether to configure a static file server target for serving storybook. Helpful for speeding up CI build/test times.",
+      "x-prompt": "Configure a static file server for the storybook instance?",
+      "default": true,
+      "x-priority": "important"
     },
     "js": {
       "type": "boolean",
@@ -31,17 +48,13 @@
     "tsConfiguration": {
       "type": "boolean",
       "description": "Configure your project with TypeScript. Generate main.ts and preview.ts files, instead of main.js and preview.js.",
-      "default": false
+      "default": true
     },
     "linter": {
       "description": "The tool to use for running lint checks.",
       "type": "string",
       "enum": ["eslint"],
       "default": "eslint"
-    },
-    "standaloneConfig": {
-      "description": "Split the project configuration into `<projectRoot>/project.json` rather than including it inside `workspace.json`.",
-      "type": "boolean"
     },
     "ignorePaths": {
       "type": "array",
@@ -50,6 +63,9 @@
         "type": "string",
         "description": "Path to ignore."
       },
+      "default": [
+        "*.stories.ts,*.stories.tsx,*.stories.js,*.stories.jsx,*.stories.mdx"
+      ],
       "examples": [
         "apps/my-app/src/not-stories/**",
         "**/**/src/**/not-stories/**",
@@ -59,5 +75,6 @@
       ]
     }
   },
-  "required": ["name"]
+  "required": ["project"],
+  "examplesFile": "../../../docs/storybook-configuration-examples.md"
 }

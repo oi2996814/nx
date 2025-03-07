@@ -2,6 +2,7 @@ node_modules
 /.idea
 /.fleet
 /.vscode
+/.cursor
 dist
 /build
 /coverage
@@ -12,15 +13,52 @@ tmp
 jest.debug.config.js
 .tool-versions
 /.nx-cache
+/.nx
 /.verdaccio/build/local-registry
 /graph/client/src/assets/environment.js
+/graph/client/src/assets/dev/environment.js
+/graph/client/src/assets/generated-project-graphs
+/graph/client/src/assets/generated-task-graphs
+/graph/client/src/assets/generated-task-inputs
+/graph/client/src/assets/generated-source-maps
 /nx-dev/nx-dev/public/documentation
 /nx-dev/nx-dev/public/images/open-graph
-# Lerna creates this
+**/tests/temp-db
+
+# Issues scraper creates these files, stored by github's cache
+/scripts/issues-scraper/cached
+
+# We don't commit a CHANELGELOG.md file to the repo, we only create Github releases
 CHANGELOG.md
 
 # Next.js
 .next
+out
+
+# Angular Cache
+.angular
 
 # Local dev files
-.env
+.env.local
+.bashrc
+
+*.node
+
+# Fix for issue when working on the repo in a dev container
+.pnpm-store
+.nx
+!.nx/workflows
+
+.cargo/.package-cache
+.cargo/bin/
+.cargo/env
+.cargo/registry/
+.local/
+.npm/
+.profile
+.rustup/
+target
+*.wasm
+/wasi-sdk*
+
+vite.config.*.timestamp*

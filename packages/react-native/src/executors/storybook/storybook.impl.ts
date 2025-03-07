@@ -1,104 +1,93 @@
-import { join } from 'path';
-import { ExecutorContext, logger } from '@nrwl/devkit';
-import { fileExists } from '@nrwl/workspace/src/utilities/fileutils';
-import * as chalk from 'chalk';
+import { writeFileSync } from 'node:fs';
+import { join, relative, resolve, dirname } from 'path';
+import { ExecutorContext, logger, readJsonFile } from '@nx/devkit';
+import { fileExists } from '@nx/workspace/src/utilities/fileutils';
+import * as pc from 'picocolors';
+import { sync as globSync } from 'glob';
 
 import { ReactNativeStorybookOptions } from './schema';
-import { ChildProcess, fork } from 'child_process';
 import {
   displayNewlyAddedDepsMessage,
   syncDeps,
 } from '../sync-deps/sync-deps.impl';
+import { PackageJson } from 'nx/src/utils/package-json';
 
-let childProcess: ChildProcess;
-
-export default async function* reactNatievStorybookExecutor(
+/**
+ * TODO (@xiongemi): remove this function in v20.
+ * @deprecated Going to use the default react storybook target. Use @nx/react:storybook executor instead.
+ */
+export default async function* reactNativeStorybookExecutor(
   options: ReactNativeStorybookOptions,
   context: ExecutorContext
 ): AsyncGenerator<{ success: boolean }> {
-  const projectRoot = context.workspace.projects[context.projectName].root;
+  const { syncDeps: isSyncDepsEnabled = true } = options;
+
+  const projectRoot =
+    context.projectsConfigurations.projects[context.projectName].root;
   logger.info(
-    `${chalk.bold.cyan(
-      'info'
+    `${pc.bold(
+      pc.cyan('info')
     )} To see your Storybook stories on the device, you should start your mobile app for the <platform> of your choice (typically ios or android).`
   );
 
   // add storybook addons to app's package.json
   const packageJsonPath = join(context.root, projectRoot, 'package.json');
-  if (fileExists(packageJsonPath))
+  const workspacePackageJsonPath = join(context.root, 'package.json');
+
+  const workspacePackageJson = readJsonFile<PackageJson>(
+    workspacePackageJsonPath
+  );
+  const projectPackageJson = readJsonFile<PackageJson>(packageJsonPath);
+
+  if (isSyncDepsEnabled && fileExists(packageJsonPath))
     displayNewlyAddedDepsMessage(
       context.projectName,
       await syncDeps(
         context.projectName,
-        projectRoot,
-        context.root,
+        projectPackageJson,
+        packageJsonPath,
+        workspacePackageJson,
         context.projectGraph,
         [
+          `@storybook/react-native`,
           '@storybook/addon-ondevice-actions',
           '@storybook/addon-ondevice-backgrounds',
           '@storybook/addon-ondevice-controls',
           '@storybook/addon-ondevice-notes',
+          '@react-native-async-storage/async-storage',
+          'react-native-safe-area-context',
         ]
       )
     );
 
-  try {
-    await runCliStorybook(context.root, options);
-    yield { success: true };
-  } finally {
-    if (childProcess) {
-      childProcess.kill();
-    }
-  }
+  runCliStorybook(context.root, options);
+  yield { success: true };
 }
 
-function runCliStorybook(
+export function runCliStorybook(
   workspaceRoot: string,
   options: ReactNativeStorybookOptions
 ) {
-  return new Promise((resolve, reject) => {
-    childProcess = fork(
-      join(
-        workspaceRoot,
-        './node_modules/react-native-storybook-loader/out/rnstl-cli.js'
-      ),
-      createStorybookOptions(options),
-      {
-        cwd: workspaceRoot,
-      }
-    );
+  const storiesFiles: string[] = options.searchDir.flatMap((dir) => {
+    const storyFilePaths: string[] = globSync(join(dir, options.pattern));
 
-    // Ensure the child process is killed when the parent exits
-    process.on('exit', () => childProcess.kill());
-    process.on('SIGTERM', () => childProcess.kill());
-
-    childProcess.on('error', (err) => {
-      reject(err);
-    });
-    childProcess.on('exit', (code) => {
-      if (code === 0) {
-        resolve(code);
-      } else {
-        reject(code);
-      }
+    return storyFilePaths.map((storyFilePath) => {
+      const loaderPath: string = resolve(dirname(options.outputFile));
+      return relative(loaderPath, storyFilePath);
     });
   });
-}
 
-function createStorybookOptions(options) {
-  return Object.keys(options).reduce((acc, k) => {
-    const v = options[k];
-    if (typeof v === 'boolean') {
-      if (v === true) {
-        acc.push(`--${k}`);
-      }
-    } else if (Array.isArray(v)) {
-      v.forEach((value) => {
-        acc.push(`--${k}`, value);
-      });
-    } else {
-      acc.push(`--${k}`, v);
-    }
-    return acc;
-  }, []);
+  if (storiesFiles.length === 0) {
+    logger.warn(`${pc.bold(pc.yellow('warn'))} No stories found.`);
+  }
+
+  const newContents = `// Auto-generated file created by nx
+// DO NOT EDIT.
+export function loadStories() {
+  return [
+    ${storiesFiles.map((story) => `require('${story}')`).join(',\n')}
+  ];
+}`;
+
+  writeFileSync(join(workspaceRoot, options.outputFile), newContents);
 }

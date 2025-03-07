@@ -4,13 +4,9 @@ import {
   ProjectGraph,
   ProjectGraphProjectNode,
 } from '../../config/project-graph';
-import { ProjectConfiguration } from 'nx/src/config/workspace-json-project-json';
 
 export interface AffectedProjectGraphContext {
-  projectGraphNodes: Record<
-    string,
-    ProjectGraphProjectNode<ProjectConfiguration>
-  >;
+  projectGraphNodes: Record<string, ProjectGraphProjectNode>;
   nxJson: NxJsonConfiguration<any>;
   touchedProjects: string[];
 }
@@ -18,12 +14,9 @@ export interface AffectedProjectGraphContext {
 export interface TouchedProjectLocator<T extends Change = Change> {
   (
     fileChanges: FileChange<T>[],
-    projectGraphNodes?: Record<
-      string,
-      ProjectGraphProjectNode<ProjectConfiguration>
-    >,
+    projectGraphNodes?: Record<string, ProjectGraphProjectNode>,
     nxJson?: NxJsonConfiguration<any>,
     packageJson?: any,
     projectGraph?: ProjectGraph
-  ): string[];
+  ): string[] | Promise<string[]>;
 }

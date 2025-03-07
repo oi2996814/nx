@@ -1,6 +1,5 @@
-import { join } from 'path';
-import { ExecutorContext } from '@nrwl/devkit';
-import { DependentBuildableProjectNode } from '@nrwl/workspace/src/utilities/buildable-libs-utils';
+import { ExecutorContext } from '@nx/devkit';
+import { DependentBuildableProjectNode } from '../buildable-libs-utils';
 
 import { watchForSingleFileChanges } from '../watch-for-single-file-changes';
 import type { UpdatePackageJsonOption } from './update-package-json';
@@ -11,6 +10,7 @@ export interface CopyPackageJsonOptions
   extends Omit<UpdatePackageJsonOption, 'projectRoot'> {
   watch?: boolean;
   extraDependencies?: DependentBuildableProjectNode[];
+  overrideDependencies?: DependentBuildableProjectNode[];
 }
 
 export interface CopyPackageJsonResult {
@@ -28,17 +28,23 @@ export async function copyPackageJson(
       `Could not find tsConfig option for "${context.targetName}" target of "${context.projectName}" project. Check that your project configuration is correct.`
     );
   }
-  const { target, dependencies, projectRoot } = checkDependencies(
+  let { target, dependencies, projectRoot } = checkDependencies(
     context,
     context.target.options.tsConfig
   );
   const options = { ..._options, projectRoot };
-  if (options.extraDependencies?.length) {
+
+  if (options.extraDependencies) {
     dependencies.push(...options.extraDependencies);
   }
+  if (options.overrideDependencies) {
+    dependencies = options.overrideDependencies;
+  }
+
   if (options.watch) {
     const dispose = await watchForSingleFileChanges(
-      join(context.root, projectRoot),
+      context.projectName,
+      options.projectRoot,
       'package.json',
       () => updatePackageJson(options, context, target, dependencies)
     );

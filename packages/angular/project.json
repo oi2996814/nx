@@ -1,23 +1,21 @@
 {
+  "name": "angular",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/angular",
   "projectType": "library",
   "targets": {
-    "test": {
-      "executor": "@nrwl/jest:jest",
+    "build-ng": {
+      "dependsOn": ["build-base"],
+      "executor": "@nx/angular:package",
       "options": {
-        "jestConfig": "packages/angular/jest.config.ts",
-        "passWithNoTests": true
+        "project": "packages/angular/ng-package.json",
+        "tsConfig": "packages/angular/tsconfig.lib.runtime.json"
       },
-      "outputs": ["coverage/packages/angular"]
+      "outputs": ["{workspaceRoot}/build/packages/angular"]
     },
     "build-base": {
-      "executor": "@nrwl/js:tsc",
+      "executor": "@nx/js:tsc",
       "options": {
-        "outputPath": "build/packages/angular",
-        "tsConfig": "packages/angular/tsconfig.lib.json",
-        "main": "packages/angular/index.ts",
-        "updateBuildableProjectDepsInPackageJson": false,
         "assets": [
           {
             "input": "packages/angular",
@@ -57,45 +55,17 @@
             "output": "/"
           }
         ]
-      },
-      "outputs": ["{options.outputPath}"]
+      }
     },
     "build": {
       "executor": "nx:run-commands",
-      "outputs": ["build/packages/angular"],
+      "outputs": ["{workspaceRoot}/build/packages/angular"],
+      "dependsOn": ["build-ng", "build-base", "^build"],
       "options": {
-        "commands": [
-          {
-            "command": "node ./scripts/build-angular"
-          },
-          {
-            "command": "node ./scripts/copy-readme.js angular"
-          }
-        ],
+        "command": "node ./scripts/copy-readme.js angular",
         "parallel": false
       }
-    },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "options": {
-        "lintFilePatterns": [
-          "packages/angular/**/*.ts",
-          "packages/angular/**/*.spec.ts",
-          "packages/angular/**/*_spec.ts",
-          "packages/angular/**/*.spec.tsx",
-          "packages/angular/**/*.spec.js",
-          "packages/angular/**/*.spec.jsx",
-          "packages/angular/**/*.d.ts",
-          "packages/angular/**/executors/**/schema.json",
-          "packages/angular/**/generators/**/schema.json",
-          "packages/angular/generators.json",
-          "packages/angular/executors.json",
-          "packages/angular/package.json",
-          "packages/angular/migrations.json"
-        ]
-      },
-      "outputs": ["{options.outputFile}"]
     }
   },
-  "implicitDependencies": ["workspace", "cypress", "jest"]
+  "implicitDependencies": []
 }

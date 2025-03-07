@@ -4,7 +4,23 @@
   "overrides": [
     {
       "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
-      "rules": {}
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "name": "fast-glob",
+            "message": "Please use `tinyglobby` instead."
+          },
+          {
+            "name": "minimatch",
+            "message": "Please use `picomatch` instead."
+          },
+          {
+            "name": "fs-extra",
+            "message": "Please use equivalent utilities from `node:fs` instead."
+          }
+        ]
+      }
     },
     {
       "files": ["*.ts", "*.tsx"],
@@ -25,7 +41,38 @@
       ],
       "parser": "jsonc-eslint-parser",
       "rules": {
-        "@nrwl/nx/nx-plugin-checks": "error"
+        "@nx/nx-plugin-checks": "error"
+      }
+    },
+    {
+      "files": ["./package.json"],
+      "parser": "jsonc-eslint-parser",
+      "rules": {
+        "@nx/dependency-checks": [
+          "error",
+          {
+            "buildTargets": ["build-base"],
+            "ignoredDependencies": [
+              "nx",
+              "prettier",
+              "typescript",
+              "eslint",
+              "verdaccio", // Optional, used for local registry
+              // require.resolve is used for these packages
+              "source-map-support",
+              "@babel/core",
+              "@babel/plugin-proposal-decorators",
+              "@babel/plugin-transform-runtime",
+              "@babel/preset-env",
+              "@babel/preset-typescript",
+              "@babel/runtime",
+              "@swc/cli",
+              "babel-plugin-const-enum",
+              "babel-plugin-macros",
+              "babel-plugin-transform-typescript-metadata"
+            ]
+          }
+        ]
       }
     }
   ]

@@ -1,29 +1,24 @@
+import { names, Tree } from '@nx/devkit';
 import {
-  getWorkspaceLayout,
-  getWorkspacePath,
-  joinPathFragments,
-  names,
-  readJson,
-  Tree,
-} from '@nrwl/devkit';
-import { getImportPath } from 'nx/src/utils/path';
+  determineProjectNameAndRootOptions,
+  ensureRootProjectName,
+} from '@nx/devkit/src/generators/project-name-and-root-utils';
+import { Linter } from '@nx/eslint';
+import { UnitTestRunner } from '../../../utils/test-runners';
 import { Schema } from '../schema';
 import { NormalizedSchema } from './normalized-schema';
-import { Linter } from '@nrwl/linter';
-import { UnitTestRunner } from '../../../utils/test-runners';
-import { normalizePrefix } from '../../utils/project';
 
-export function normalizeOptions(
+export async function normalizeOptions(
   host: Tree,
-  schema: Partial<Schema>
-): NormalizedSchema {
+  schema: Schema
+): Promise<NormalizedSchema> {
+  schema.standalone = schema.standalone ?? true;
   // Create a schema with populated default values
   const options: Schema = {
     buildable: false,
     linter: Linter.EsLint,
-    name: '', // JSON validation will ensure this is set
     publishable: false,
-    simpleModuleName: false,
+    simpleName: false,
     skipFormat: false,
     unitTestRunner: UnitTestRunner.Jest,
     // Publishable libs cannot use `full` yet, so if its false then use the passed value or default to `full`
@@ -34,58 +29,48 @@ export function normalizeOptions(
     ...schema,
   };
 
-  const name = names(options.name).fileName;
-  const projectDirectory = options.directory
-    ? `${names(options.directory).fileName}/${name}`.replace(/\/+/g, '/')
-    : name;
+  await ensureRootProjectName(options, 'library');
+  const {
+    projectName,
+    names: projectNames,
+    projectRoot,
+    importPath,
+  } = await determineProjectNameAndRootOptions(host, {
+    name: options.name,
+    projectType: 'library',
+    directory: options.directory,
+    importPath: options.importPath,
+  });
 
-  const { libsDir, npmScope, standaloneAsDefault } = getWorkspaceLayout(host);
-
-  const projectName = projectDirectory
-    .replace(new RegExp('/', 'g'), '-')
-    .replace(/-\d+/g, '');
-  const fileName = options.simpleModuleName ? name : projectName;
-  const projectRoot = joinPathFragments(libsDir, projectDirectory);
+  const fileName = options.simpleName
+    ? projectNames.projectSimpleName
+    : projectNames.projectFileName;
 
   const moduleName = `${names(fileName).className}Module`;
   const parsedTags = options.tags
     ? options.tags.split(',').map((s) => s.trim())
     : [];
   const modulePath = `${projectRoot}/src/lib/${fileName}.module.ts`;
-  const prefix = normalizePrefix(options.prefix, npmScope);
 
-  options.standaloneConfig = options.standaloneConfig ?? standaloneAsDefault;
-
-  const importPath =
-    options.importPath || getImportPath(npmScope, projectDirectory);
-
-  // Determine the roots where @schematics/angular will place the projects
-  // This might not be where the projects actually end up
-  const workspaceJsonPath = getWorkspacePath(host);
-  let newProjectRoot = null;
-  if (workspaceJsonPath) {
-    ({ newProjectRoot } = readJson(host, workspaceJsonPath));
-  }
-  const ngCliSchematicLibRoot = newProjectRoot
-    ? `${newProjectRoot}/${projectName}`
-    : projectName;
-
+  const ngCliSchematicLibRoot = projectName;
   const allNormalizedOptions = {
     ...options,
     linter: options.linter ?? Linter.EsLint,
     unitTestRunner: options.unitTestRunner ?? UnitTestRunner.Jest,
-    prefix,
+    prefix: options.prefix ?? 'lib',
     name: projectName,
     projectRoot,
     entryFile: 'index',
     moduleName,
-    projectDirectory,
     modulePath,
     parsedTags,
     fileName,
     importPath,
     ngCliSchematicLibRoot,
-    standaloneComponentName: `${names(name).className}Component`,
+    skipTests: options.unitTestRunner === 'none' ? true : options.skipTests,
+    standaloneComponentName: `${
+      names(projectNames.projectSimpleName).className
+    }Component`,
   };
 
   const {
@@ -98,13 +83,14 @@ export function normalizeOptions(
     skipTests,
     selector,
     skipSelector,
+    flat,
     ...libraryOptions
   } = allNormalizedOptions;
 
   return {
     libraryOptions,
     componentOptions: {
-      name: libraryOptions.name,
+      name: fileName,
       standalone: libraryOptions.standalone,
       displayBlock,
       inlineStyle,
@@ -115,6 +101,7 @@ export function normalizeOptions(
       skipTests,
       selector,
       skipSelector,
+      flat,
     },
   };
 }

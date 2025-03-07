@@ -1,18 +1,10 @@
-import {
-  ExecutorContext,
-  readJson,
-  readJsonFile,
-  TargetConfiguration,
-  Tree,
-} from '@nrwl/devkit';
+import { TargetConfiguration, Tree } from '@nx/devkit';
 import { CompilerOptions } from 'typescript';
-import { storybookVersion } from './versions';
-import { StorybookConfig } from '../executors/models';
-import { constants, copyFileSync, mkdtempSync, statSync } from 'fs';
-import { tmpdir } from 'os';
-import { basename, join, sep } from 'path';
-import { findNodes } from '@nrwl/workspace/src/utilities/typescript/find-nodes';
+import { statSync } from 'fs';
+import { findNodes } from '@nx/js';
 import ts = require('typescript');
+import { major } from 'semver';
+import { join } from 'path';
 
 export const Constants = {
   addonDependencies: ['@storybook/addons'],
@@ -22,64 +14,49 @@ export const Constants = {
   },
   jsonIndentLevel: 2,
   coreAddonPrefix: '@storybook/addon-',
-  uiFrameworks: {
-    angular: '@storybook/angular',
-    react: '@storybook/react',
-    html: '@storybook/html',
-    'web-components': '@storybook/web-components',
-    vue: '@storybook/vue',
-    vue3: '@storybook/vue3',
-    svelte: '@storybook/svelte',
-    'react-native': '@storybook/react-native',
-  } as const,
+  uiFrameworks7: [
+    '@storybook/angular',
+    '@storybook/html-webpack5',
+    '@storybook/nextjs',
+    '@storybook/preact-webpack5',
+    '@storybook/react-webpack5',
+    '@storybook/react-vite',
+    '@storybook/server-webpack5',
+    '@storybook/svelte-webpack5',
+    '@storybook/svelte-vite',
+    '@storybook/sveltekit',
+    '@storybook/vue-webpack5',
+    '@storybook/vue-vite',
+    '@storybook/vue3-webpack5',
+    '@storybook/vue3-vite',
+    '@storybook/web-components-webpack5',
+    '@storybook/web-components-vite',
+  ],
 };
 type Constants = typeof Constants;
 
-type Framework = {
-  type: keyof Constants['uiFrameworks'];
-  uiFramework: Constants['uiFrameworks'][keyof Constants['uiFrameworks']];
-};
-export function isFramework(
-  type: Framework['type'],
-  schema: Pick<Framework, 'uiFramework'>
-) {
-  if (type === 'angular' && schema.uiFramework === '@storybook/angular') {
-    return true;
+export function storybookMajorVersion(): number | undefined {
+  try {
+    const storybookPackageVersion = require(join(
+      '@storybook/core-server',
+      'package.json'
+    )).version;
+    return major(storybookPackageVersion);
+  } catch {
+    return undefined;
   }
-  if (type === 'react' && schema.uiFramework === '@storybook/react') {
-    return true;
-  }
-  if (type === 'html' && schema.uiFramework === '@storybook/html') {
-    return true;
-  }
+}
 
-  if (
-    type === 'web-components' &&
-    schema.uiFramework === '@storybook/web-components'
-  ) {
-    return true;
+export function getInstalledStorybookVersion(): string | undefined {
+  try {
+    const storybookPackageVersion = require(join(
+      '@storybook/core-server',
+      'package.json'
+    )).version;
+    return storybookPackageVersion;
+  } catch {
+    return undefined;
   }
-
-  if (type === 'vue' && schema.uiFramework === '@storybook/vue') {
-    return true;
-  }
-
-  if (type === 'vue3' && schema.uiFramework === '@storybook/vue3') {
-    return true;
-  }
-
-  if (type === 'svelte' && schema.uiFramework === '@storybook/svelte') {
-    return true;
-  }
-
-  if (
-    type === 'react-native' &&
-    schema.uiFramework === '@storybook/react-native'
-  ) {
-    return true;
-  }
-
-  return false;
 }
 
 export function safeFileDelete(tree: Tree, path: string): boolean {
@@ -91,62 +68,6 @@ export function safeFileDelete(tree: Tree, path: string): boolean {
   }
 }
 
-export function readCurrentWorkspaceStorybookVersionFromGenerator(
-  tree: Tree
-): string {
-  const packageJsonContents = readJson(tree, 'package.json');
-  return determineStorybookWorkspaceVersion(packageJsonContents);
-}
-
-export function readCurrentWorkspaceStorybookVersionFromExecutor() {
-  const packageJsonContents = readJsonFile('package.json');
-  return determineStorybookWorkspaceVersion(packageJsonContents);
-}
-
-function determineStorybookWorkspaceVersion(packageJsonContents) {
-  let workspaceStorybookVersion = storybookVersion;
-
-  if (packageJsonContents && packageJsonContents['devDependencies']) {
-    if (packageJsonContents['devDependencies']['@storybook/angular']) {
-      workspaceStorybookVersion =
-        packageJsonContents['devDependencies']['@storybook/angular'];
-    }
-    if (packageJsonContents['devDependencies']['@storybook/react']) {
-      workspaceStorybookVersion =
-        packageJsonContents['devDependencies']['@storybook/react'];
-    }
-    if (packageJsonContents['devDependencies']['@storybook/core']) {
-      workspaceStorybookVersion =
-        packageJsonContents['devDependencies']['@storybook/core'];
-    }
-    if (packageJsonContents['devDependencies']['@storybook/react-native']) {
-      workspaceStorybookVersion =
-        packageJsonContents['devDependencies']['@storybook/react-native'];
-    }
-  }
-
-  if (packageJsonContents && packageJsonContents['dependencies']) {
-    if (packageJsonContents['dependencies']['@storybook/angular']) {
-      workspaceStorybookVersion =
-        packageJsonContents['dependencies']['@storybook/angular'];
-    }
-    if (packageJsonContents['dependencies']['@storybook/react']) {
-      workspaceStorybookVersion =
-        packageJsonContents['dependencies']['@storybook/react'];
-    }
-    if (packageJsonContents['dependencies']['@storybook/core']) {
-      workspaceStorybookVersion =
-        packageJsonContents['dependencies']['@storybook/core'];
-    }
-    if (packageJsonContents['dependencies']['@storybook/react-native']) {
-      workspaceStorybookVersion =
-        packageJsonContents['dependencies']['@storybook/react-native'];
-    }
-  }
-
-  return workspaceStorybookVersion;
-}
-
 export type TsConfig = {
   extends: string;
   compilerOptions: CompilerOptions;
@@ -156,75 +77,26 @@ export type TsConfig = {
   references?: Array<{ path: string }>;
 };
 
-export function findOrCreateConfig(
-  config: StorybookConfig,
-  context: ExecutorContext
-): string {
-  if (config?.configFolder && statSync(config.configFolder).isDirectory()) {
-    return config.configFolder;
-  } else if (
-    statSync(config.configPath).isFile() &&
-    statSync(config.pluginPath).isFile() &&
-    statSync(config.srcRoot).isFile()
-  ) {
-    return createStorybookConfig(
-      config.configPath,
-      config.pluginPath,
-      config.srcRoot
-    );
-  } else {
-    const sourceRoot = context.workspace.projects[context.projectName].root;
-    if (statSync(join(context.root, sourceRoot, '.storybook')).isDirectory()) {
-      return join(context.root, sourceRoot, '.storybook');
-    }
-  }
-  throw new Error('No configuration settings');
-}
+export function storybookConfigExistsCheck(
+  config: string,
+  projectName: string
+): void {
+  const exists = !!(config && statSync(config).isDirectory());
 
-function createStorybookConfig(
-  configPath: string,
-  pluginPath: string,
-  srcRoot: string
-): string {
-  const tmpDir = tmpdir();
-  const tmpFolder = `${tmpDir}${sep}`;
-  mkdtempSync(tmpFolder);
-  copyFileSync(
-    configPath,
-    `${tmpFolder}/${basename(configPath)}`,
-    constants.COPYFILE_EXCL
-  );
-  copyFileSync(
-    pluginPath,
-    `${tmpFolder}/${basename(pluginPath)}`,
-    constants.COPYFILE_EXCL
-  );
-  copyFileSync(
-    srcRoot,
-    `${tmpFolder}/${basename(srcRoot)}`,
-    constants.COPYFILE_EXCL
-  );
-  return tmpFolder;
+  if (!exists) {
+    throw new Error(
+      `Could not find Storybook configuration for project ${projectName}.
+      Please generate Storybook configuration using the following command:
+
+      nx g @nx/storybook:configuration --name=${projectName}
+      `
+    );
+  }
 }
 
 export function dedupe(arr: string[]) {
   return Array.from(new Set(arr));
 }
-
-/**
- * This function is used to find the build targets for Storybook
- * and the project (if it's buildable).
- *
- * The reason this function exists is because we cannot assume
- * that the user has not created a custom build target for the project,
- * or that they have not changed the name of the build target
- * from build to anything else.
- *
- * So, in order to find the correct name of the target,
- * we have to look into all the targets, check the executor
- * they are using, and infer from the executor that the target
- * is a build target.
- */
 
 export function findStorybookAndBuildTargetsAndCompiler(targets: {
   [targetName: string]: TargetConfiguration;
@@ -233,6 +105,7 @@ export function findStorybookAndBuildTargetsAndCompiler(targets: {
   storybookTarget?: string;
   ngBuildTarget?: string;
   nextBuildTarget?: string;
+  viteBuildTarget?: string;
   otherBuildTarget?: string;
   compiler?: string;
 } {
@@ -241,32 +114,43 @@ export function findStorybookAndBuildTargetsAndCompiler(targets: {
     storybookTarget?: string;
     ngBuildTarget?: string;
     nextBuildTarget?: string;
+    viteBuildTarget?: string;
     otherBuildTarget?: string;
     compiler?: string;
   } = {};
 
-  Object.entries(targets).forEach(([target, targetConfig]) => {
-    switch (targetConfig.executor) {
-      case '@storybook/angular:start-storybook':
-        returnObject.storybookTarget = target;
-        break;
-      case '@storybook/angular:build-storybook':
-        returnObject.storybookBuildTarget = target;
-        break;
-      // If it's a non-angular project, these will be the executors
-      case '@nrwl/storybook:storybook':
-        returnObject.storybookTarget = target;
-        break;
-      case '@nrwl/storybook:build':
-        returnObject.storybookBuildTarget = target;
-        break;
-      case '@angular-devkit/build-angular:browser':
+  const arrayOfBuilders = [
+    '@nx/js:babel',
+    '@nx/js:swc',
+    '@nx/js:tsc',
+    '@nx/webpack:webpack',
+    '@nx/rollup:rollup',
+    '@nx/vite:build',
+    '@nx/angular:ng-packagr-lite',
+    '@nx/angular:package',
+    '@nx/angular:webpack-browser',
+    '@nx/esbuild:esbuild',
+    '@nx/next:build',
+    '@nxext/vite:build',
+    '@angular-devkit/build-angular:application',
+    '@angular-devkit/build-angular:browser',
+    '@angular-devkit/build-angular:browser-esbuild',
+  ];
+
+  for (const target in targets) {
+    if (arrayOfBuilders.includes(targets[target].executor)) {
+      if (
+        targets[target].executor === '@angular-devkit/build-angular:browser' ||
+        targets[target].executor ===
+          '@angular-devkit/build-angular:browser-esbuild' ||
+        targets[target].executor === '@angular-devkit/build-angular:application'
+      ) {
         /**
-         * Not looking for '@nrwl/angular:ng-packagr-lite' or any other
-         * angular executors.
+         * Not looking for '@nx/angular:ng-packagr-lite' or any other
+         * @nx/angular:* executors.
          * Only looking for '@angular-devkit/build-angular:browser'
-         * because the '@nrwl/angular:ng-packagr-lite' executor
-         * (and maybe the other custom exeucutors)
+         * because the '@nx/angular:ng-packagr-lite' executor
+         * (and maybe the other custom executors)
          * does not support styles and extra options, so the user
          * will be forced to switch to build-storybook to add extra options.
          *
@@ -274,27 +158,29 @@ export function findStorybookAndBuildTargetsAndCompiler(targets: {
          * avoid any errors.
          */
         returnObject.ngBuildTarget = target;
-        returnObject.compiler = targetConfig?.options?.compiler;
-        break;
-      case '@nrwl/next:build':
+      } else if (targets[target].executor.includes('vite')) {
+        returnObject.viteBuildTarget = target;
+      } else if (targets[target].executor.includes('next')) {
         returnObject.nextBuildTarget = target;
-        returnObject.compiler = targetConfig?.options?.compiler;
-        break;
-      case '@nrwl/web:webpack':
-      case '@nrwl/web:rollup':
-      case '@nrwl/js:tsc':
-      case '@nrwl/angular:ng-packagr-lite':
+      } else {
         returnObject.otherBuildTarget = target;
-        returnObject.compiler = targetConfig?.options?.compiler;
-        break;
-      default:
-        if (targetConfig.options?.compiler) {
-          returnObject.otherBuildTarget = target;
-          returnObject.compiler = targetConfig?.options?.compiler;
-        }
-        break;
+      }
+      returnObject.compiler = targets[target].options?.compiler;
+    } else if (
+      targets[target].executor === '@storybook/angular:start-storybook' ||
+      targets[target].executor === '@nx/storybook:storybook'
+    ) {
+      returnObject.storybookTarget = target;
+    } else if (
+      targets[target].executor === '@storybook/angular:build-storybook' ||
+      targets[target].executor === '@nx/storybook:build'
+    ) {
+      returnObject.storybookBuildTarget = target;
+    } else if (targets[target].options?.compiler) {
+      returnObject.otherBuildTarget = target;
+      returnObject.compiler = targets[target].options?.compiler;
     }
-  });
+  }
 
   return returnObject;
 }
@@ -316,12 +202,15 @@ export function isTheFileAStory(tree: Tree, path: string): boolean {
       });
       const importSpecifiers = findNodes(importNode, [
         ts.SyntaxKind.ImportSpecifier,
+        ts.SyntaxKind.NamespaceImport,
       ]);
       importSpecifiers.forEach((importSpecifier: ts.ImportSpecifier) => {
         if (
           importSpecifier.getText() === 'Story' ||
+          importSpecifier.getText() === 'Meta' ||
           importSpecifier.getText() === 'storiesOf' ||
-          importSpecifier.getText() === 'ComponentStory'
+          importSpecifier.getText() === 'ComponentStory' ||
+          importSpecifier.getText().includes('Storybook')
         ) {
           nodeContainsStoryImport = true;
         }
@@ -356,4 +245,14 @@ export function getTsSourceFile(host: Tree, path: string): ts.SourceFile {
   );
 
   return source;
+}
+
+export function pleaseUpgrade(): string {
+  return `
+    Storybook 6 and lower are no longer maintained, and not supported in Nx. 
+    Please upgrade to Storybook 7.
+
+    Here is a guide on how to upgrade:
+    https://nx.dev/nx-api/storybook/generators/migrate-7
+    `;
 }

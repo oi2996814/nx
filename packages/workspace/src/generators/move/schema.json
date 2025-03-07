@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "NxWorkspaceMove",
   "cli": "nx",
   "title": "Nx Move",
@@ -7,7 +7,7 @@
   "type": "object",
   "examples": [
     {
-      "command": "nx g @nrwl/workspace:move --project my-feature-lib --destination shared/my-feature-lib",
+      "command": "nx g @nx/workspace:move --project my-feature-lib --destination shared/my-feature-lib",
       "description": "Move `libs/my-feature-lib` to `libs/shared/my-feature-lib`"
     }
   ],
@@ -17,6 +17,13 @@
       "alias": "project",
       "description": "The name of the project to move.",
       "x-dropdown": "projects"
+    },
+    "newProjectName": {
+      "type": "string",
+      "alias": "project",
+      "description": "The new name of the project after the move.",
+      "pattern": "(?:^@[a-zA-Z0-9-*~][a-zA-Z0-9-*._~]*\\/[a-zA-Z0-9-~][a-zA-Z0-9-._~]*|^[a-zA-Z][^:]*)$",
+      "x-priority": "important"
     },
     "destination": {
       "type": "string",
@@ -39,7 +46,8 @@
       "type": "boolean",
       "aliases": ["skip-format"],
       "description": "Skip formatting files.",
-      "default": false
+      "default": false,
+      "x-priority": "internal"
     }
   },
   "required": ["projectName", "destination"]

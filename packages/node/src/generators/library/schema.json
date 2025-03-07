@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "cli": "nx",
   "$id": "NxNodeLibrary",
   "title": "Create a Node Library for Nx",
@@ -12,36 +12,42 @@
     }
   ],
   "properties": {
-    "name": {
+    "directory": {
       "type": "string",
-      "description": "Library name",
+      "description": "A directory where the lib is placed",
+      "alias": "dir",
       "$default": {
         "$source": "argv",
         "index": 0
       },
-      "x-prompt": "What name would you like to use for the library?"
+      "x-prompt": "Which directory do you want to create the library in?"
     },
-    "directory": {
+    "name": {
       "type": "string",
-      "description": "A directory where the lib is placed",
-      "alias": "dir"
+      "description": "Library name",
+      "pattern": "(?:^@[a-zA-Z0-9-*~][a-zA-Z0-9-*._~]*\\/[a-zA-Z0-9-~][a-zA-Z0-9-._~]*|^[a-zA-Z][^:]*)$",
+      "x-priority": "important"
     },
     "simpleModuleName": {
-      "description": "Keep the module name simple (when using `--directory`).",
+      "description": "Keep the module name simple.",
       "type": "boolean",
       "default": false
     },
     "linter": {
       "description": "The tool to use for running lint checks.",
       "type": "string",
-      "enum": ["eslint"],
-      "default": "eslint"
+      "enum": ["eslint", "none"],
+      "default": "none",
+      "x-prompt": "Which linter would you like to use?",
+      "x-priority": "important"
     },
     "unitTestRunner": {
       "type": "string",
       "enum": ["jest", "none"],
       "description": "Test runner to use for unit tests.",
-      "default": "jest"
+      "default": "none",
+      "x-prompt": "Which unit test runner would you like to use?",
+      "x-priority": "important"
     },
     "tags": {
       "type": "string",
@@ -51,27 +57,32 @@
     "skipFormat": {
       "description": "Skip formatting files.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-priority": "internal"
     },
     "skipTsConfig": {
       "type": "boolean",
       "default": false,
-      "description": "Do not update `tsconfig.base.json` for development experience."
+      "description": "Do not update `tsconfig.base.json` for development experience.",
+      "x-priority": "internal"
     },
     "publishable": {
       "type": "boolean",
-      "description": "Create a publishable library."
+      "description": "Create a publishable library.",
+      "x-priority": "important"
     },
     "buildable": {
       "type": "boolean",
-      "default": false,
-      "description": "Generate a buildable library."
+      "default": true,
+      "description": "Generate a buildable library.",
+      "x-priority": "important"
     },
     "compiler": {
       "type": "string",
       "enum": ["tsc", "swc"],
       "default": "tsc",
-      "description": "The compiler used by the build and test targets."
+      "description": "The compiler used by the build and test targets.",
+      "x-priority": "important"
     },
     "importPath": {
       "type": "string",
@@ -92,12 +103,6 @@
       "description": "Use `babel` instead of `ts-jest`.",
       "default": false
     },
-    "pascalCaseFiles": {
-      "type": "boolean",
-      "description": "Use pascal case file names.",
-      "alias": "P",
-      "default": false
-    },
     "js": {
       "type": "boolean",
       "description": "Generate JavaScript files rather than TypeScript files.",
@@ -110,7 +115,9 @@
     },
     "standaloneConfig": {
       "description": "Split the project configuration into `<projectRoot>/project.json` rather than including it inside `workspace.json`.",
-      "type": "boolean"
+      "type": "boolean",
+      "default": true,
+      "x-deprecated": "Nx only supports standaloneConfig"
     },
     "setParserOptionsProject": {
       "type": "boolean",
@@ -118,5 +125,5 @@
       "default": false
     }
   },
-  "required": ["name"]
+  "required": ["directory"]
 }

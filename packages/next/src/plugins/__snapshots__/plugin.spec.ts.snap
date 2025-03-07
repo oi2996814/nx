@@ -1,0 +1,153 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`@nx/next/plugin integrated projects should create nodes 1`] = `
+[
+  [
+    "my-app/next.config.js",
+    {
+      "projects": {
+        "my-app": {
+          "root": "my-app",
+          "targets": {
+            "build-deps": {
+              "dependsOn": [
+                "^build",
+              ],
+            },
+            "my-build": {
+              "cache": true,
+              "command": "next build",
+              "dependsOn": [
+                "^build",
+              ],
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "next",
+                  ],
+                },
+              ],
+              "options": {
+                "cwd": "my-app",
+                "tty": false,
+              },
+              "outputs": [
+                "{workspaceRoot}/my-app/.next",
+                "{workspaceRoot}/my-app/.next/!(cache)",
+              ],
+            },
+            "my-serve": {
+              "command": "next dev",
+              "options": {
+                "cwd": "my-app",
+              },
+            },
+            "my-serve-static": {
+              "command": "next start",
+              "dependsOn": [
+                "my-build",
+              ],
+              "options": {
+                "cwd": "my-app",
+              },
+            },
+            "my-start": {
+              "command": "next start",
+              "dependsOn": [
+                "my-build",
+              ],
+              "options": {
+                "cwd": "my-app",
+              },
+            },
+            "watch-deps": {
+              "command": "npx nx watch --projects my-app --includeDependentProjects -- npx nx build-deps my-app",
+              "dependsOn": [
+                "build-deps",
+              ],
+            },
+          },
+        },
+      },
+    },
+  ],
+]
+`;
+
+exports[`@nx/next/plugin root projects should create nodes 1`] = `
+[
+  [
+    "next.config.js",
+    {
+      "projects": {
+        ".": {
+          "root": ".",
+          "targets": {
+            "build": {
+              "cache": true,
+              "command": "next build",
+              "dependsOn": [
+                "^build",
+              ],
+              "inputs": [
+                "default",
+                "^production",
+                {
+                  "externalDependencies": [
+                    "next",
+                  ],
+                },
+              ],
+              "options": {
+                "cwd": ".",
+                "tty": false,
+              },
+              "outputs": [
+                "{projectRoot}/.next",
+                "{projectRoot}/.next/!(cache)",
+              ],
+            },
+            "build-deps": {
+              "dependsOn": [
+                "^build",
+              ],
+            },
+            "dev": {
+              "command": "next dev",
+              "options": {
+                "cwd": ".",
+              },
+            },
+            "serve-static": {
+              "command": "next start",
+              "dependsOn": [
+                "build",
+              ],
+              "options": {
+                "cwd": ".",
+              },
+            },
+            "start": {
+              "command": "next start",
+              "dependsOn": [
+                "build",
+              ],
+              "options": {
+                "cwd": ".",
+              },
+            },
+            "watch-deps": {
+              "command": "npx nx watch --projects next --includeDependentProjects -- npx nx build-deps next",
+              "dependsOn": [
+                "build-deps",
+              ],
+            },
+          },
+        },
+      },
+    },
+  ],
+]
+`;

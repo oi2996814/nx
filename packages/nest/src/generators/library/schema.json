@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "NxNestLibraryGenerator",
   "title": "Create a NestJS Library for Nx",
   "description": "Create a NestJS Library for Nx.",
@@ -12,31 +12,36 @@
     }
   ],
   "properties": {
-    "name": {
-      "description": "Library name.",
+    "directory": {
+      "description": "A directory where the library is placed.",
       "type": "string",
+      "alias": "dir",
       "$default": {
         "$source": "argv",
         "index": 0
       },
-      "x-prompt": "What name would you like to use for the library?"
+      "x-prompt": "Which directory do you want to create the library in?"
     },
-    "directory": {
-      "description": "A directory where the library is placed.",
-      "type": "string",
-      "alias": "dir"
+    "name": {
+      "description": "Library name.",
+      "pattern": "(?:^@[a-zA-Z0-9-*~][a-zA-Z0-9-*._~]*\\/[a-zA-Z0-9-~][a-zA-Z0-9-._~]*|^[a-zA-Z][^:]*)$",
+      "type": "string"
     },
     "linter": {
       "description": "The tool to use for running lint checks.",
       "type": "string",
       "enum": ["eslint", "none"],
-      "default": "eslint"
+      "default": "none",
+      "x-prompt": "Which linter would you like to use?",
+      "x-priority": "important"
     },
     "unitTestRunner": {
       "description": "Test runner to use for unit tests.",
       "type": "string",
       "enum": ["jest", "none"],
-      "default": "jest"
+      "default": "none",
+      "x-prompt": "Which unit test runner would you like to use?",
+      "x-priority": "important"
     },
     "tags": {
       "description": "Add tags to the library (used for linting).",
@@ -46,21 +51,25 @@
     "skipFormat": {
       "description": "Skip formatting files.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-priority": "internal"
     },
     "skipTsConfig": {
       "description": "Do not update tsconfig.base.json for development experience.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-priority": "internal"
     },
     "publishable": {
       "description": "Create a publishable library.",
-      "type": "boolean"
+      "type": "boolean",
+      "x-priority": "important"
     },
     "buildable": {
       "description": "Generate a buildable library.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-priority": "important"
     },
     "importPath": {
       "description": "The library name used to import it, like @myorg/my-awesome-lib. Must be a valid npm name.",
@@ -88,9 +97,9 @@
       "default": "node"
     },
     "target": {
-      "description": "The ES target, Nest suggest using es6 or higher.",
+      "description": "The ES target, Nest suggest using es2021 or higher.",
       "type": "string",
-      "default": "es6",
+      "default": "es2021",
       "enum": [
         "es5",
         "es6",
@@ -100,16 +109,12 @@
         "es2017",
         "es2018",
         "es2019",
-        "es2020"
+        "es2020",
+        "es2021"
       ]
     },
     "strict": {
       "description": "Whether to enable tsconfig strict mode or not.",
-      "type": "boolean",
-      "default": false
-    },
-    "standaloneConfig": {
-      "description": "Split the project configuration into <projectRoot>/project.json rather than including it inside workspace.json",
       "type": "boolean",
       "default": true
     },
@@ -117,8 +122,19 @@
       "type": "boolean",
       "description": "Whether or not to configure the ESLint \"parserOptions.project\" option. We do not do this by default for lint performance reasons.",
       "default": false
+    },
+    "skipPackageJson": {
+      "description": "Do not add dependencies to `package.json`.",
+      "type": "boolean",
+      "default": false,
+      "x-priority": "internal"
+    },
+    "simpleName": {
+      "description": "Don't include the directory in the name of the module of the library.",
+      "type": "boolean",
+      "default": false
     }
   },
   "additionalProperties": false,
-  "required": ["name"]
+  "required": ["directory"]
 }

@@ -1,17 +1,20 @@
-import type { Tree } from '@nrwl/devkit';
-import { generateFiles, joinPathFragments, logger } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import { generateFiles, joinPathFragments, logger } from '@nx/devkit';
 import type { Schema } from '../schema';
 
 export function generateWebpackConfig(
-  host: Tree,
+  tree: Tree,
   options: Schema,
   appRoot: string,
   remotesWithPorts: { remoteName: string; port: number }[]
 ) {
   if (
-    host.exists(`${appRoot}/module-federation.config.js`) ||
-    host.exists(`${appRoot}/webpack.config.js`) ||
-    host.exists(`${appRoot}/webpack.prod.config.js`)
+    tree.exists(`${appRoot}/module-federation.config.js`) ||
+    tree.exists(`${appRoot}/webpack.config.js`) ||
+    tree.exists(`${appRoot}/webpack.prod.config.js`) ||
+    tree.exists(`${appRoot}/module-federation.config.ts`) ||
+    tree.exists(`${appRoot}/webpack.config.ts`) ||
+    tree.exists(`${appRoot}/webpack.prod.config.ts`)
   ) {
     logger.warn(
       `NOTE: We encountered an existing webpack config for the app ${options.appName}. We have overwritten this file with the Module Federation Config.\n
@@ -19,17 +22,26 @@ export function generateWebpackConfig(
     );
   }
 
+  const pathToWebpackTemplateFiles = options.typescriptConfiguration
+    ? 'ts-webpack'
+    : 'webpack';
+
   generateFiles(
-    host,
-    joinPathFragments(__dirname, '../files/webpack'),
+    tree,
+    joinPathFragments(__dirname, `../files/${pathToWebpackTemplateFiles}`),
     appRoot,
     {
       tmpl: '',
       type: options.mfType,
+      federationType: options.federationType,
       name: options.appName,
       remotes: remotesWithPorts ?? [],
       projectRoot: appRoot,
       standalone: options.standalone,
     }
   );
+
+  if (!options.setParserOptionsProject) {
+    tree.delete(joinPathFragments(appRoot, 'tsconfig.lint.json'));
+  }
 }

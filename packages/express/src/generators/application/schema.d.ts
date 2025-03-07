@@ -1,18 +1,20 @@
-import { UnitTestRunner } from '../../utils/test-runners';
-import type { Linter } from '@nrwl/linter';
+import type { Linter, LinterType } from '@nx/eslint';
+import type { UnitTestRunner } from '../../utils/test-runners';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   skipFormat: boolean;
   skipPackageJson: boolean;
-  directory?: string;
   unitTestRunner: UnitTestRunner;
   tags?: string;
-  linter: Linter;
+  linter: Linter | LinterType;
   frontendProject?: string;
+  swcJest?: boolean;
+  /** @deprecated use `swcJest` instead */
   babelJest?: boolean;
   js: boolean;
-  pascalCaseFiles: boolean;
   standaloneConfig?: boolean;
   setParserOptionsProject?: boolean;
+  addPlugin?: boolean;
 }

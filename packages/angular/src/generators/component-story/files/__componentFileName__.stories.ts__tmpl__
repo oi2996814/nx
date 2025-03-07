@@ -1,22 +1,31 @@
-import { moduleMetadata, Story, Meta } from '@storybook/angular';
+import type { Meta, StoryObj } from '@storybook/angular';
 import { <%=componentName%> } from './<%=componentFileName%>';
+<%_ if ( interactionTests ) { _%>
+import { within } from '@storybook/testing-library';
+import { expect } from '@storybook/jest';
+<%_ } _%>
 
-export default {
-  title: '<%=componentName%>',
-  component: <%=componentName%>,
-  decorators: [
-    moduleMetadata({
-      imports: [],
-    })
-  ],
-} as Meta<<%=componentName%>>;
+const meta: Meta<<%= componentName %>> = {
+  component: <%= componentName %>,
+  title: '<%= componentName %>',
+};
+export default meta;
+type Story = StoryObj<<%=componentName%>>;
 
-const Template: Story<<%=componentName%>> = (args: <%=componentName%>) => ({
-  props: args,
-});
+export const Primary: Story = {
+  args: {<% for (let prop of props) { %>
+    <%= prop.name %>: <%- prop.defaultValue %>,<% } %>
+  },
+};
 
-
-export const Primary = Template.bind({});
-Primary.args = {<% for (let prop of props) { %>
-    <%= prop.name %>:  <%- prop.defaultValue %>,<% } %>
-}
+<%_ if ( interactionTests ) { _%>
+export const Heading: Story = {
+  args: {<% for (let prop of props) { %>
+    <%= prop.name %>: <%- prop.defaultValue %>,<% } %>
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    expect(canvas.getByText(/<%=componentNameSimple%> works!/gi)).toBeTruthy();
+  },
+};
+<%_ } _%>

@@ -1,23 +1,27 @@
-export const nxVersion = '*';
+export const nxVersion = require('../../package.json').version;
 
-export const expoVersion = '46.0.10';
-export const expoMetroConfigVersion = '0.3.22';
-export const expoSplashScreenVersion = '~0.16.2';
-export const expoStatusBarVersion = '~1.4.0';
-export const jestExpoVersion = '46.0.1';
-export const expoCliVersion = '6.0.5';
-export const easCliVersion = '2.1.0';
-export const babelPresetExpoVersion = '~9.2.0';
+export const expoVersion = '~52.0.11';
+export const expoSplashScreenVersion = '~0.29.13';
+export const expoStatusBarVersion = '~2.0.0';
+export const expoCliVersion = '~0.21.8'; // @expo/cli
+export const babelPresetExpoVersion = '~12.0.1';
 
-export const reactNativeVersion = '0.69.5';
-export const typesReactNativeVersion = '0.69.8';
-export const reactNativeWebVersion = '~0.18.7';
+export const reactVersion = '~18.3.1';
+export const reactDomVersion = '~18.3.1';
+export const reactTestRendererVersion = '~18.3.1';
+export const typesReactVersion = '~18.3.12';
 
-export const reactNativeSvgTransformerVersion = '1.0.0';
-export const reactNativeSvgVersion = '12.3.0';
-export const svgrWebpackVersion = '^6.3.1';
+export const reactNativeVersion = '0.76.3';
+export const reactNativeWebVersion = '~0.19.13';
 
-export const metroVersion = '0.72.2';
+export const expoMetroConfigVersion = '~0.19.4';
+export const expoMetroRuntimeVersion = '~4.0.0';
 
-export const testingLibraryReactNativeVersion = '11.0.0';
-export const testingLibraryJestNativeVersion = '4.0.11';
+export const reactNativeSvgTransformerVersion = '~1.5.0';
+export const reactNativeSvgVersion = '~15.8.0';
+
+export const testingLibraryReactNativeVersion = '~12.9.0';
+export const testingLibraryJestNativeVersion = '~5.4.3';
+export const jestExpoVersion = '~52.0.2';
+
+export const babelRuntimeVersion = '~7.26.0';

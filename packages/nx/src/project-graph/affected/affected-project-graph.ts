@@ -3,45 +3,49 @@ import {
   getImplicitlyTouchedProjects,
   getTouchedProjects,
 } from './locators/workspace-projects';
-import { getTouchedNpmPackages } from './locators/npm-packages';
-import { getImplicitlyTouchedProjectsByJsonChanges } from './locators/implicit-json-changes';
+import { getTouchedProjects as getJSTouchedProjects } from '../../plugins/js/project-graph/affected/touched-projects';
 import {
   AffectedProjectGraphContext,
   TouchedProjectLocator,
 } from './affected-project-graph-models';
-import { getTouchedProjectsInWorkspaceJson } from './locators/workspace-json-changes';
-import { getTouchedProjectsFromTsConfig } from './locators/tsconfig-json-changes';
 import { NxJsonConfiguration } from '../../config/nx-json';
 import { ProjectGraph } from '../../config/project-graph';
 import { reverse } from '../operators';
-import { ProjectConfiguration } from '../../config/workspace-json-project-json';
 import { readNxJson } from '../../config/configuration';
-import { workspaceConfigName } from 'nx/src/config/workspaces';
 import { getTouchedProjectsFromProjectGlobChanges } from './locators/project-glob-changes';
-import { workspaceRoot } from 'nx/src/utils/workspace-root';
 
-export function filterAffected(
-  graph: ProjectGraph<ProjectConfiguration>,
+export async function filterAffected(
+  graph: ProjectGraph,
   touchedFiles: FileChange[],
   nxJson: NxJsonConfiguration = readNxJson(),
   packageJson: any = readPackageJson()
-): ProjectGraph {
+): Promise<ProjectGraph> {
   // Additional affected logic should be in this array.
   const touchedProjectLocators: TouchedProjectLocator[] = [
     getTouchedProjects,
     getImplicitlyTouchedProjects,
-    getTouchedNpmPackages,
-    getImplicitlyTouchedProjectsByJsonChanges,
-    getTouchedProjectsFromTsConfig,
+    getTouchedProjectsFromProjectGlobChanges,
+    getJSTouchedProjects,
   ];
-  if (workspaceConfigName(workspaceRoot)) {
-    touchedProjectLocators.push(getTouchedProjectsInWorkspaceJson);
-  } else {
-    touchedProjectLocators.push(getTouchedProjectsFromProjectGlobChanges);
+
+  const touchedProjects = [];
+  for (const locator of touchedProjectLocators) {
+    performance.mark(locator.name + ':start');
+    const projects = await locator(
+      touchedFiles,
+      graph.nodes,
+      nxJson,
+      packageJson,
+      graph
+    );
+    performance.mark(locator.name + ':end');
+    performance.measure(
+      locator.name,
+      locator.name + ':start',
+      locator.name + ':end'
+    );
+    touchedProjects.push(...projects);
   }
-  const touchedProjects = touchedProjectLocators.reduce((acc, f) => {
-    return acc.concat(f(touchedFiles, graph.nodes, nxJson, packageJson, graph));
-  }, [] as string[]);
 
   return filterAffectedProjects(graph, {
     projectGraphNodes: graph.nodes,
@@ -63,10 +67,10 @@ function filterAffectedProjects(
   };
   const reversed = reverse(graph);
   ctx.touchedProjects.forEach((p) => {
-    addAffectedNodes(p, reversed, result, []);
+    addAffectedNodes(p, reversed, result, new Set());
   });
   ctx.touchedProjects.forEach((p) => {
-    addAffectedDependencies(p, reversed, result, []);
+    addAffectedDependencies(p, reversed, result, new Set());
   });
   return result;
 }
@@ -75,15 +79,15 @@ function addAffectedNodes(
   startingProject: string,
   reversed: ProjectGraph,
   result: ProjectGraph,
-  visited: string[]
+  visited: Set<string>
 ): void {
-  if (visited.indexOf(startingProject) > -1) return;
+  if (visited.has(startingProject)) return;
   const reversedNode = reversed.nodes[startingProject];
   const reversedExternalNode = reversed.externalNodes[startingProject];
   if (!reversedNode && !reversedExternalNode) {
     throw new Error(`Invalid project name is detected: "${startingProject}"`);
   }
-  visited.push(startingProject);
+  visited.add(startingProject);
   if (reversedNode) {
     result.nodes[startingProject] = reversedNode;
     result.dependencies[startingProject] = [];
@@ -99,10 +103,10 @@ function addAffectedDependencies(
   startingProject: string,
   reversed: ProjectGraph,
   result: ProjectGraph,
-  visited: string[]
+  visited: Set<string>
 ): void {
-  if (visited.indexOf(startingProject) > -1) return;
-  visited.push(startingProject);
+  if (visited.has(startingProject)) return;
+  visited.add(startingProject);
   if (reversed.dependencies[startingProject]) {
     reversed.dependencies[startingProject].forEach(({ target }) =>
       addAffectedDependencies(target, reversed, result, visited)

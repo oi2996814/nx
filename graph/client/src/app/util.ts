@@ -1,9 +1,10 @@
+/* eslint-disable @nx/enforce-module-boundaries */
 // nx-ignore-next-line
-import { ProjectGraphDependency } from '@nrwl/devkit';
-
-export function trimBackSlash(value: string): string {
-  return value.replace(/\/$/, '');
-}
+import type {
+  ProjectGraphDependency,
+  ProjectGraphProjectNode,
+} from '@nx/devkit';
+/* eslint-enable @nx/enforce-module-boundaries */
 
 export function parseParentDirectoriesFromFilePath(
   path: string,
@@ -47,4 +48,52 @@ export function hasPath(
   }
 
   return false;
+}
+
+export function getProjectsByType(
+  type: string,
+  projects: ProjectGraphProjectNode[]
+): ProjectGraphProjectNode[] {
+  return projects
+    .filter((project) => project.type === type)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export function groupProjectsByDirectory(
+  projects: ProjectGraphProjectNode[],
+  workspaceLayout: { appsDir: string; libsDir: string }
+): Record<string, ProjectGraphProjectNode[]> {
+  let groups: Record<string, ProjectGraphProjectNode[]> = {};
+
+  projects.forEach((project) => {
+    const workspaceRoot =
+      project.type === 'app' || project.type === 'e2e'
+        ? workspaceLayout.appsDir
+        : workspaceLayout.libsDir;
+    const directories = parseParentDirectoriesFromFilePath(
+      (project.data as any).root,
+      workspaceRoot
+    );
+
+    const directory = directories.join('/');
+
+    if (!groups.hasOwnProperty(directory)) {
+      groups[directory] = [];
+    }
+    groups[directory].push(project);
+  });
+
+  return groups;
+}
+
+export function createTaskName(
+  project: string,
+  target: string,
+  configuration?: string
+) {
+  if (configuration) {
+    return `${project}:${target}:${configuration}`;
+  } else {
+    return `${project}:${target}`;
+  }
 }

@@ -1,17 +1,30 @@
-import { Linter } from '@nrwl/linter';
+import type { Linter, LinterType } from '@nx/eslint';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   skipFormat?: boolean;
   skipPackageJson?: boolean;
-  directory?: string;
   unitTestRunner?: 'jest' | 'none';
-  linter?: Linter;
+  e2eTestRunner?: 'jest' | 'none';
+  linter?: Linter | LinterType;
+  formatter?: 'none' | 'prettier';
   tags?: string;
   frontendProject?: string;
+  swcJest?: boolean;
+  /** @deprecated use `swcJest` instead */
   babelJest?: boolean;
   js?: boolean;
-  pascalCaseFiles?: boolean;
   setParserOptionsProject?: boolean;
   standaloneConfig?: boolean;
+  bundler?: 'esbuild' | 'webpack';
+  framework?: NodeJsFrameWorks;
+  port?: number;
+  rootProject?: boolean;
+  docker?: boolean;
+  isNest?: boolean;
+  addPlugin?: boolean;
+  useTsSolution?: boolean;
 }
+
+export type NodeJsFrameWorks = 'express' | 'koa' | 'fastify' | 'nest' | 'none';

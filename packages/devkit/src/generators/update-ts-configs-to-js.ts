@@ -1,29 +1,15 @@
-import type { Tree } from 'nx/src/generators/tree';
-import { updateJson } from 'nx/src/generators/utils/json';
+import { Tree, updateJson } from 'nx/src/devkit-exports';
 
 export function updateTsConfigsToJs(
   tree: Tree,
   options: { projectRoot: string }
 ): void {
-  let updateConfigPath: string;
+  let updateConfigPath: string | null = null;
 
   const paths = {
     tsConfig: `${options.projectRoot}/tsconfig.json`,
     tsConfigLib: `${options.projectRoot}/tsconfig.lib.json`,
     tsConfigApp: `${options.projectRoot}/tsconfig.app.json`,
-  };
-
-  const getProjectType = (tree: Tree) => {
-    if (tree.exists(paths.tsConfigApp)) {
-      return 'application';
-    }
-    if (tree.exists(paths.tsConfigLib)) {
-      return 'library';
-    }
-
-    throw new Error(
-      `project is missing tsconfig.lib.json or tsconfig.app.json`
-    );
   };
 
   updateJson(tree, paths.tsConfig, (json) => {
@@ -35,21 +21,30 @@ export function updateTsConfigsToJs(
     return json;
   });
 
-  const projectType = getProjectType(tree);
-
-  if (projectType === 'library') {
+  if (tree.exists(paths.tsConfigLib)) {
     updateConfigPath = paths.tsConfigLib;
   }
-  if (projectType === 'application') {
+
+  if (tree.exists(paths.tsConfigApp)) {
     updateConfigPath = paths.tsConfigApp;
   }
 
-  updateJson(tree, updateConfigPath, (json) => {
-    json.include = uniq([...json.include, '**/*.js']);
-    json.exclude = uniq([...json.exclude, '**/*.spec.js', '**/*.test.js']);
+  if (updateConfigPath) {
+    updateJson(tree, updateConfigPath, (json) => {
+      json.include = uniq([...(json.include ?? []), 'src/**/*.js']);
+      json.exclude = uniq([
+        ...(json.exclude ?? []),
+        'src/**/*.spec.js',
+        'src/**/*.test.js',
+      ]);
 
-    return json;
-  });
+      return json;
+    });
+  } else {
+    throw new Error(
+      `project is missing tsconfig.lib.json or tsconfig.app.json`
+    );
+  }
 }
 
 const uniq = <T extends string[]>(value: T) => [...new Set(value)] as T;

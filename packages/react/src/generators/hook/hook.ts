@@ -1,26 +1,33 @@
 // TODO(jack): Remove inline renderHook function when RTL releases with its own version
-import * as ts from 'typescript';
 import {
   applyChangesToString,
-  convertNxGenerator,
   formatFiles,
   generateFiles,
   getProjects,
   joinPathFragments,
   logger,
   names,
-  toJS,
   Tree,
-} from '@nrwl/devkit';
-
-import { Schema } from './schema';
+} from '@nx/devkit';
+import {
+  determineArtifactNameAndDirectoryOptions,
+  type FileExtensionType,
+} from '@nx/devkit/src/generators/artifact-name-and-directory-utils';
+import { ensureTypescript } from '@nx/js/src/utils/typescript/ensure-typescript';
+import { join } from 'path';
 import { addImport } from '../../utils/ast-utils';
+import { Schema } from './schema';
+import { getProjectType } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
-interface NormalizedSchema extends Schema {
+interface NormalizedSchema extends Omit<Schema, 'js'> {
   projectSourceRoot: string;
   hookName: string;
   hookTypeName: string;
   fileName: string;
+  fileExtension: string;
+  fileExtensionType: FileExtensionType;
+  projectName: string;
+  directory: string;
 }
 
 export async function hookGenerator(host: Tree, schema: Schema) {
@@ -33,59 +40,60 @@ export async function hookGenerator(host: Tree, schema: Schema) {
 }
 
 function createFiles(host: Tree, options: NormalizedSchema) {
-  const hookDir = joinPathFragments(
-    options.projectSourceRoot,
-    options.directory
-  );
+  const specExt = options.fileExtensionType === 'ts' ? 'tsx' : 'js';
 
-  generateFiles(host, joinPathFragments(__dirname, './files'), hookDir, {
+  generateFiles(host, join(__dirname, './files'), options.directory, {
     ...options,
-    tmpl: '',
+    ext: options.fileExtension,
+    specExt,
+    isTs: options.fileExtensionType === 'ts',
   });
 
-  for (const c of host.listChanges()) {
-    let deleteFile = false;
-
-    if (options.skipTests && /.*spec.ts/.test(c.path)) {
-      deleteFile = true;
-    }
-
-    if (deleteFile) {
-      host.delete(c.path);
-    }
-  }
-
-  if (options.js) {
-    toJS(host);
+  if (options.skipTests) {
+    host.delete(
+      joinPathFragments(
+        options.directory,
+        `${options.fileName}.spec.${specExt}`
+      )
+    );
   }
 }
 
+let tsModule: typeof import('typescript');
+
 function addExportsToBarrel(host: Tree, options: NormalizedSchema) {
+  if (!tsModule) {
+    tsModule = ensureTypescript();
+  }
   const workspace = getProjects(host);
-  const isApp = workspace.get(options.project).projectType === 'application';
+  const isApp =
+    workspace.get(options.projectName).projectType === 'application';
 
   if (options.export && !isApp) {
     const indexFilePath = joinPathFragments(
       options.projectSourceRoot,
-      options.js ? 'index.js' : 'index.ts'
+      options.fileExtensionType === 'js' ? 'index.js' : 'index.ts'
     );
-    const indexSource = host.read(indexFilePath, 'utf-8');
-    if (indexSource !== null) {
-      const indexSourceFile = ts.createSourceFile(
-        indexFilePath,
-        indexSource,
-        ts.ScriptTarget.Latest,
-        true
-      );
-      const changes = applyChangesToString(
-        indexSource,
-        addImport(
-          indexSourceFile,
-          `export * from './${options.directory}/${options.fileName}';`
-        )
-      );
-      host.write(indexFilePath, changes);
+
+    if (!host.exists(indexFilePath)) {
+      return;
     }
+
+    const indexSource = host.read(indexFilePath, 'utf-8');
+    const indexSourceFile = tsModule.createSourceFile(
+      indexFilePath,
+      indexSource,
+      tsModule.ScriptTarget.Latest,
+      true
+    );
+    const changes = applyChangesToString(
+      indexSource,
+      addImport(
+        indexSourceFile,
+        `export * from './${options.directory}/${options.fileName}';`
+      )
+    );
+    host.write(indexFilePath, changes);
   }
 }
 
@@ -93,35 +101,39 @@ async function normalizeOptions(
   host: Tree,
   options: Schema
 ): Promise<NormalizedSchema> {
-  assertValidOptions(options);
+  const {
+    artifactName,
+    directory,
+    fileName: hookFilename,
+    fileExtension,
+    fileExtensionType,
+    project: projectName,
+  } = await determineArtifactNameAndDirectoryOptions(host, {
+    path: options.path,
+    name: options.name,
+    allowedFileExtensions: ['js', 'ts'],
+    fileExtension: options.js ? 'js' : 'ts',
+    js: options.js,
+  });
 
-  let base = options.name;
-  if (base.startsWith('use-')) {
-    base = base.substring(4);
-  } else if (base.startsWith('use')) {
-    base = base.substring(3);
-  }
+  const { className } = names(hookFilename);
 
-  const { className, fileName } = names(base);
-  const hookFilename = options.pascalCaseFiles
-    ? 'use'.concat(className)
-    : 'use-'.concat(fileName);
-  const hookName = 'use'.concat(className);
-  const hookTypeName = 'Use'.concat(className);
-  const project = getProjects(host).get(options.project);
+  // if name is provided, use it as is for the hook name, otherwise prepend
+  // `use` to the pascal-cased file name if it doesn't already start with `use`
+  const hookName = options.name
+    ? artifactName
+    : className.toLocaleLowerCase().startsWith('use')
+    ? className
+    : `use${className}`;
+  const hookTypeName = names(hookName).className;
+  const project = getProjects(host).get(projectName);
 
-  if (!project) {
-    logger.error(
-      `Cannot find the ${options.project} project. Please double check the project name.`
-    );
-    throw new Error();
-  }
+  const { root, sourceRoot: projectSourceRoot, projectType } = project;
 
-  const { sourceRoot: projectSourceRoot, projectType } = project;
-
-  const directory = await getDirectory(host, options, base);
-
-  if (options.export && projectType === 'application') {
+  if (
+    options.export &&
+    getProjectType(host, root, projectType) === 'application'
+  ) {
     logger.warn(
       `The "--export" option should not be used with applications and will do nothing.`
     );
@@ -133,45 +145,11 @@ async function normalizeOptions(
     hookName,
     hookTypeName,
     fileName: hookFilename,
+    fileExtension,
+    fileExtensionType,
     projectSourceRoot,
+    projectName,
   };
 }
 
-async function getDirectory(host: Tree, options: Schema, baseHookName) {
-  const { className, fileName } = names(baseHookName);
-  const hookFileName =
-    options.pascalCaseDirectory === true
-      ? 'use'.concat(className)
-      : 'use-'.concat(fileName);
-  const workspace = getProjects(host);
-  let baseDir: string;
-  if (options.directory) {
-    baseDir = options.directory;
-  } else {
-    baseDir =
-      workspace.get(options.project).projectType === 'application'
-        ? 'app'
-        : 'lib';
-  }
-  return options.flat ? baseDir : joinPathFragments(baseDir, hookFileName);
-}
-
-function assertValidOptions(options: Schema) {
-  const slashes = ['/', '\\'];
-  slashes.forEach((s) => {
-    if (options.name.indexOf(s) !== -1) {
-      const [name, ...rest] = options.name.split(s).reverse();
-      let suggestion = rest.map((x) => x.toLowerCase()).join(s);
-      if (options.directory) {
-        suggestion = `${options.directory}${s}${suggestion}`;
-      }
-      throw new Error(
-        `Found "${s}" in the hook name. Did you mean to use the --directory option (e.g. \`nx g c ${name} --directory ${suggestion}\`)?`
-      );
-    }
-  });
-}
-
 export default hookGenerator;
-
-export const hookSchematic = convertNxGenerator(hookGenerator);

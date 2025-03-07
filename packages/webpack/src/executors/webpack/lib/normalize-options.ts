@@ -1,31 +1,32 @@
-import { basename, dirname, relative, resolve } from 'path';
-import { statSync } from 'fs';
-import { normalizePath } from '@nrwl/devkit';
+import { resolve } from 'path';
 
+import {
+  normalizeAssets,
+  normalizeFileReplacements,
+} from '../../../plugins/nx-webpack-plugin/lib/normalize-options';
 import type {
-  AssetGlobPattern,
-  FileReplacement,
-  WebpackExecutorOptions,
   NormalizedWebpackExecutorOptions,
+  WebpackExecutorOptions,
 } from '../schema';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
 export function normalizeOptions(
   options: WebpackExecutorOptions,
   root: string,
+  projectRoot: string,
   sourceRoot: string
 ): NormalizedWebpackExecutorOptions {
-  return {
+  const normalizedOptions = {
     ...options,
+    useTsconfigPaths: !isUsingTsSolutionSetup(),
     root,
+    projectRoot,
     sourceRoot,
     target: options.target ?? 'web',
-    main: resolve(root, options.main),
-    outputPath: resolve(root, options.outputPath),
     outputFileName: options.outputFileName ?? 'main.js',
-    tsConfig: resolve(root, options.tsConfig),
-    fileReplacements: normalizeFileReplacements(root, options.fileReplacements),
-    assets: normalizeAssets(options.assets, root, sourceRoot),
     webpackConfig: normalizePluginPath(options.webpackConfig, root),
+    fileReplacements: normalizeFileReplacements(root, options.fileReplacements),
+    sassImplementation: options.sassImplementation ?? 'sass',
     optimization:
       typeof options.optimization !== 'object'
         ? {
@@ -33,20 +34,17 @@ export function normalizeOptions(
             styles: options.optimization,
           }
         : options.optimization,
-    polyfills: options.polyfills ? resolve(root, options.polyfills) : undefined,
-    es2015Polyfills: options.es2015Polyfills
-      ? resolve(root, options.es2015Polyfills)
-      : undefined,
   };
-}
-function normalizeFileReplacements(
-  root: string,
-  fileReplacements: FileReplacement[]
-): FileReplacement[] {
-  return fileReplacements.map((fileReplacement) => ({
-    replace: resolve(root, fileReplacement.replace),
-    with: resolve(root, fileReplacement.with),
-  }));
+  if (options.assets) {
+    normalizedOptions.assets = normalizeAssets(
+      options.assets,
+      root,
+      sourceRoot,
+      projectRoot,
+      false // executor assets are relative to workspace root for consistency
+    );
+  }
+  return normalizedOptions as NormalizedWebpackExecutorOptions;
 }
 
 export function normalizePluginPath(pluginPath: void | string, root: string) {
@@ -58,51 +56,4 @@ export function normalizePluginPath(pluginPath: void | string, root: string) {
   } catch {
     return resolve(root, pluginPath);
   }
-}
-
-export function normalizeAssets(
-  assets: any[],
-  root: string,
-  sourceRoot: string
-): AssetGlobPattern[] {
-  return assets.map((asset) => {
-    if (typeof asset === 'string') {
-      const assetPath = normalizePath(asset);
-      const resolvedAssetPath = resolve(root, assetPath);
-      const resolvedSourceRoot = resolve(root, sourceRoot);
-
-      if (!resolvedAssetPath.startsWith(resolvedSourceRoot)) {
-        throw new Error(
-          `The ${resolvedAssetPath} asset path must start with the project source root: ${sourceRoot}`
-        );
-      }
-
-      const isDirectory = statSync(resolvedAssetPath).isDirectory();
-      const input = isDirectory
-        ? resolvedAssetPath
-        : dirname(resolvedAssetPath);
-      const output = relative(resolvedSourceRoot, resolve(root, input));
-      const glob = isDirectory ? '**/*' : basename(resolvedAssetPath);
-      return {
-        input,
-        output,
-        glob,
-      };
-    } else {
-      if (asset.output.startsWith('..')) {
-        throw new Error(
-          'An asset cannot be written to a location outside of the output path.'
-        );
-      }
-
-      const assetPath = normalizePath(asset.input);
-      const resolvedAssetPath = resolve(root, assetPath);
-      return {
-        ...asset,
-        input: resolvedAssetPath,
-        // Now we remove starting slash to make Webpack place it from the output root.
-        output: asset.output.replace(/^\//, ''),
-      };
-    }
-  });
 }
