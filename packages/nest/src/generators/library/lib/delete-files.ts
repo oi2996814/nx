@@ -1,5 +1,5 @@
-import type { Tree } from '@nrwl/devkit';
-import { joinPathFragments } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import { joinPathFragments } from '@nx/devkit';
 import type { NormalizedOptions } from '../schema';
 
 export function deleteFiles(tree: Tree, options: NormalizedOptions): void {
@@ -23,7 +23,11 @@ export function deleteFiles(tree: Tree, options: NormalizedOptions): void {
     );
   }
 
-  if (!options.buildable && !options.publishable) {
+  if (
+    !options.buildable &&
+    !options.publishable &&
+    !options.isUsingTsSolutionsConfig
+  ) {
     tree.delete(joinPathFragments(options.projectRoot, 'package.json'));
   }
 }

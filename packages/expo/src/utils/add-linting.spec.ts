@@ -1,7 +1,9 @@
-import { readProjectConfiguration, Tree } from '@nrwl/devkit';
-import { createTreeWithEmptyWorkspace } from '@nrwl/devkit/testing';
-import { Linter } from '@nrwl/linter';
-import { libraryGenerator } from '@nrwl/workspace/src/generators/library/library';
+import 'nx/src/internal-testing-utils/mock-project-graph';
+
+import { Tree } from '@nx/devkit';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
+import { Linter } from '@nx/eslint';
+import { libraryGenerator } from '@nx/js';
 import { addLinting } from './add-linting';
 
 describe('Add Linting', () => {
@@ -10,35 +12,32 @@ describe('Add Linting', () => {
   beforeEach(async () => {
     tree = createTreeWithEmptyWorkspace();
     await libraryGenerator(tree, {
-      name: 'my-lib',
+      directory: 'my-lib',
       linter: Linter.None,
     });
   });
 
-  it('should add update `project configuration` file properly when eslint is passed', () => {
-    addLinting(
-      tree,
-      'my-lib',
-      'libs/my-lib',
-      ['libs/my-lib/tsconfig.lib.json'],
-      Linter.EsLint
-    );
-    const project = readProjectConfiguration(tree, 'my-lib');
+  it('should add update configuration when eslint is passed', async () => {
+    await addLinting(tree, {
+      projectName: 'my-lib',
+      linter: Linter.EsLint,
+      tsConfigPaths: ['my-lib/tsconfig.lib.json'],
+      projectRoot: 'my-lib',
+      addPlugin: true,
+    });
 
-    expect(project.targets.lint).toBeDefined();
-    expect(project.targets.lint.executor).toEqual('@nrwl/linter:eslint');
+    expect(tree.exists('my-lib/.eslintrc.json')).toBeTruthy();
   });
 
   it('should not add lint target when "none" is passed', async () => {
-    addLinting(
-      tree,
-      'my-lib',
-      'libs/my-lib',
-      ['libs/my-lib/tsconfig.lib.json'],
-      Linter.None
-    );
-    const project = readProjectConfiguration(tree, 'my-lib');
+    await addLinting(tree, {
+      projectName: 'my-lib',
+      linter: Linter.None,
+      tsConfigPaths: ['my-lib/tsconfig.lib.json'],
+      projectRoot: 'my-lib',
+      addPlugin: true,
+    });
 
-    expect(project.targets.lint).toBeUndefined();
+    expect(tree.exists('my-lib/.eslintrc.json')).toBeFalsy();
   });
 });

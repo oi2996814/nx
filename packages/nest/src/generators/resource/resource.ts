@@ -1,7 +1,5 @@
-import type { Tree } from '@nrwl/devkit';
-import { convertNxGenerator } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
 import type {
-  NestGeneratorWithLanguageOption,
   NestGeneratorWithResourceOption,
   NestGeneratorWithTestOption,
   NormalizedOptions,
@@ -12,30 +10,29 @@ import {
   unitTestRunnerToSpec,
 } from '../utils';
 
-export type ResourceGeneratorOptions = NestGeneratorWithLanguageOption &
-  NestGeneratorWithTestOption &
+export type ResourceGeneratorOptions = NestGeneratorWithTestOption &
   NestGeneratorWithResourceOption;
 
-export function resourceGenerator(
+export async function resourceGenerator(
   tree: Tree,
   rawOptions: ResourceGeneratorOptions
 ): Promise<any> {
-  const options = normalizeResourceOptions(tree, rawOptions);
+  const options = await normalizeResourceOptions(tree, rawOptions);
 
   return runNestSchematic(tree, 'resource', options);
 }
 
 export default resourceGenerator;
 
-export const resourceSchematic = convertNxGenerator(resourceGenerator);
-
-function normalizeResourceOptions(
+async function normalizeResourceOptions(
   tree: Tree,
   options: ResourceGeneratorOptions
-): NormalizedOptions {
+): Promise<NormalizedOptions> {
+  const normalizedOptions = await normalizeOptions(tree, options, {
+    skipLanguageOption: true,
+  });
   return {
-    ...normalizeOptions(tree, options),
-    language: options.language,
+    ...normalizedOptions,
     spec: unitTestRunnerToSpec(options.unitTestRunner),
   };
 }

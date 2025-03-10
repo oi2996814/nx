@@ -1,16 +1,20 @@
-import { Linter } from '@nrwl/linter';
+import { Linter, LinterType } from '@nx/eslint';
+import { UiFramework } from '../../utils/models';
 
 export interface StorybookConfigureSchema {
-  name: string;
-  uiFramework:
-    | '@storybook/angular'
-    | '@storybook/react'
-    | '@storybook/react-native';
-  configureCypress?: boolean;
-  linter?: Linter;
+  project: string;
+  uiFramework?: UiFramework;
+  linter?: Linter | LinterType;
   js?: boolean;
+  interactionTests?: boolean;
   tsConfiguration?: boolean;
-  cypressDirectory?: string;
   standaloneConfig?: boolean;
-  configureTestRunner?: boolean;
+  configureStaticServe?: boolean;
+  skipFormat?: boolean;
+  addPlugin?: boolean;
+
+  /**
+   * @internal
+   */
+  addExplicitTargets?: boolean;
 }

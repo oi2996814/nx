@@ -1,14 +1,22 @@
-import { addProjectConfiguration, Tree } from '@nrwl/devkit';
-import { createTreeWithEmptyV1Workspace } from '@nrwl/devkit/testing';
+import { addProjectConfiguration, Tree } from '@nx/devkit';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
 import { Schema } from '../schema';
 import { checkTargets } from './check-targets';
+
+// nested code imports graph from the repo, which might have innacurate graph version
+jest.mock('nx/src/project-graph/project-graph', () => ({
+  ...jest.requireActual<any>('nx/src/project-graph/project-graph'),
+  createProjectGraphAsync: jest
+    .fn()
+    .mockImplementation(async () => ({ nodes: {}, dependencies: {} })),
+}));
 
 describe('checkTargets', () => {
   let tree: Tree;
   let schema: Schema;
 
   beforeEach(async () => {
-    tree = createTreeWithEmptyV1Workspace();
+    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
 
     schema = {
       projectName: 'ng-app',
@@ -30,7 +38,7 @@ describe('checkTargets', () => {
           options: {},
         },
         storybook: {
-          executor: '@nrwl/storybook:storybook',
+          executor: '@nx/storybook:storybook',
           options: {},
         },
       },
@@ -42,7 +50,7 @@ describe('checkTargets', () => {
       sourceRoot: 'apps/storybook/src',
       targets: {
         storybook: {
-          executor: '@nrwl/storybook:storybook',
+          executor: '@nx/storybook:storybook',
         },
       },
     });
@@ -53,7 +61,7 @@ describe('checkTargets', () => {
       projectType: 'application',
       targets: {
         e2e: {
-          executor: '@nrwl/cypress:cypress',
+          executor: '@nx/cypress:cypress',
           options: {
             cypressConfig: 'apps/ng-app-e2e/cypress.json',
             tsConfig: 'apps/ng-app-e2e/tsconfig.e2e.json',
@@ -65,12 +73,11 @@ describe('checkTargets', () => {
   });
 
   it('should throw an error if another project targets', async () => {
-    expect(() => {
-      checkTargets(tree, schema);
-    }).toThrowErrorMatchingInlineSnapshot(`
+    await expect(checkTargets(tree, schema)).rejects
+      .toThrowErrorMatchingInlineSnapshot(`
       "ng-app is still targeted by some projects:
 
-      \\"ng-app:serve\\" is used by \\"ng-app-e2e\\"
+      "ng-app:serve" is used by "ng-app-e2e"
       "
     `);
   });
@@ -78,53 +85,18 @@ describe('checkTargets', () => {
   it('should NOT throw an error if no other project targets', async () => {
     schema.projectName = 'ng-app-e2e';
 
-    expect(() => {
-      checkTargets(tree, schema);
-    }).not.toThrow();
+    await expect(checkTargets(tree, schema)).resolves.toBeUndefined();
   });
 
   it('should NOT throw an error if it is a nrwl package', async () => {
     schema.projectName = 'storybook';
 
-    expect(() => {
-      checkTargets(tree, schema);
-    }).not.toThrow();
+    await expect(checkTargets(tree, schema)).resolves.toBeUndefined();
   });
 
   it('should not error if forceRemove is true', async () => {
     schema.forceRemove = true;
 
-    expect(() => {
-      checkTargets(tree, schema);
-    }).not.toThrow();
-  });
-
-  describe('use project in other project target', () => {
-    beforeEach(() => {
-      addProjectConfiguration(tree, 'other', {
-        projectType: 'application',
-        root: 'apps/storybook',
-        sourceRoot: 'apps/storybook/src',
-        targets: {
-          storybook: {
-            executor: '@nrwl/storybook:storybook',
-          },
-          serve: {
-            executor: '@angular-devkit/build-angular:dev-server',
-            options: {
-              browserTarget: 'storybook:build',
-            },
-          },
-        },
-      });
-    });
-
-    it('should throw an error since it is used as a target in another project', async () => {
-      schema.projectName = 'storybook';
-
-      expect(() => {
-        checkTargets(tree, schema);
-      }).toThrow();
-    });
+    await expect(checkTargets(tree, schema)).resolves.toBeUndefined();
   });
 });

@@ -7,7 +7,12 @@ import type { LifeCycle } from '../life-cycle';
 import type { TaskStatus } from '../tasks-runner';
 import { Task } from '../../config/task-graph';
 import { prettyTime } from './pretty-time';
-import { formatFlags } from './formatting-utils';
+import { formatFlags, formatTargetsAndProjects } from './formatting-utils';
+import { viewLogsFooterRows } from './view-logs-utils';
+
+const LEFT_PAD = `   `;
+const SPACER = `  `;
+const EXTENDED_LEFT_PAD = `      `;
 
 /**
  * The following function is responsible for creating a life cycle with dynamic
@@ -27,10 +32,14 @@ export async function createRunManyDynamicOutputRenderer({
 }: {
   projectNames: string[];
   tasks: Task[];
-  args: { target?: string; configuration?: string; parallel?: number };
+  args: { targets?: string[]; configuration?: string; parallel?: number };
   overrides: Record<string, unknown>;
 }): Promise<{ lifeCycle: LifeCycle; renderIsDone: Promise<void> }> {
   cliCursor.hide();
+  // Show the cursor again after the process exits
+  process.on('exit', () => {
+    cliCursor.show();
+  });
   let resolveRenderIsDonePromise: (value: void) => void;
   const renderIsDone = new Promise<void>(
     (resolve) => (resolveRenderIsDonePromise = resolve)
@@ -40,8 +49,8 @@ export async function createRunManyDynamicOutputRenderer({
   });
 
   function clearRenderInterval() {
-    if (renderProjectRowsIntervalId) {
-      clearInterval(renderProjectRowsIntervalId);
+    if (renderIntervalId) {
+      clearInterval(renderIntervalId);
     }
   }
 
@@ -56,14 +65,11 @@ export async function createRunManyDynamicOutputRenderer({
   const start = process.hrtime();
   const figures = await import('figures');
 
+  const targets = args.targets;
   const totalTasks = tasks.length;
-  const totalProjects = projectNames.length;
-  const totalDependentTasks = totalTasks - totalProjects;
-  const targetName = args.target;
-  const configuration = args.configuration;
-  const projectRows = projectNames.map((projectName) => {
+  const taskRows = tasks.map((task) => {
     return {
-      projectName,
+      task,
       status: 'pending',
     };
   });
@@ -82,32 +88,34 @@ export async function createRunManyDynamicOutputRenderer({
   let totalCachedTasks = 0;
 
   // Used to control the rendering of the spinner on each project row
-  let projectRowsCurrentFrame = 0;
-  let renderProjectRowsIntervalId: NodeJS.Timeout | undefined;
+  let currentFrame = 0;
+  let renderIntervalId: NodeJS.Timeout | undefined;
 
-  const clearPinnedFooter = () => {
-    for (let i = 0; i < pinnedFooterNumLines; i++) {
-      readline.moveCursor(process.stdout, 0, -1);
-      readline.clearLine(process.stdout, 0);
-    }
+  const moveCursorToStartOfPinnedFooter = () => {
+    readline.moveCursor(process.stdout, 0, -pinnedFooterNumLines);
   };
 
   const renderPinnedFooter = (lines: string[], dividerColor = 'cyan') => {
     let additionalLines = 0;
     if (hasTaskOutput) {
-      output.addVerticalSeparator(dividerColor);
-      additionalLines += 3;
+      const dividerLines = output.getVerticalSeparatorLines(dividerColor);
+      for (const line of dividerLines) {
+        output.overwriteLine(line);
+      }
+      additionalLines += dividerLines.length;
     }
     // Create vertical breathing room for cursor position under the pinned footer
     lines.push('');
     for (const line of lines) {
-      process.stdout.write(output.X_PADDING + line + EOL);
+      output.overwriteLine(line);
     }
     pinnedFooterNumLines = lines.length + additionalLines;
+    // clear any possible text below the cursor's position
+    readline.clearScreenDown(process.stdout);
   };
 
   const printTaskResult = (task: Task, status: TaskStatus) => {
-    clearPinnedFooter();
+    moveCursorToStartOfPinnedFooter();
     // If this is the very first output, add some vertical breathing room
     if (!hasTaskOutput) {
       output.addNewline();
@@ -116,10 +124,10 @@ export async function createRunManyDynamicOutputRenderer({
 
     switch (status) {
       case 'local-cache':
-        writeLine(
+        writeCompletedTaskResultLine(
           `${
             output.colors.green(figures.tick) +
-            '  ' +
+            SPACER +
             output.formatCommand(task.id)
           }  ${output.dim('[local cache]')}`
         );
@@ -128,10 +136,10 @@ export async function createRunManyDynamicOutputRenderer({
         }
         break;
       case 'local-cache-kept-existing':
-        writeLine(
+        writeCompletedTaskResultLine(
           `${
             output.colors.green(figures.tick) +
-            '  ' +
+            SPACER +
             output.formatCommand(task.id)
           }  ${output.dim('[existing outputs match the cache, left as is]')}`
         );
@@ -140,10 +148,10 @@ export async function createRunManyDynamicOutputRenderer({
         }
         break;
       case 'remote-cache':
-        writeLine(
+        writeCompletedTaskResultLine(
           `${
             output.colors.green(figures.tick) +
-            '  ' +
+            SPACER +
             output.formatCommand(task.id)
           }  ${output.dim('[remote cache]')}`
         );
@@ -155,9 +163,9 @@ export async function createRunManyDynamicOutputRenderer({
         const timeTakenText = prettyTime(
           process.hrtime(tasksToProcessStartTimes[task.id])
         );
-        writeLine(
+        writeCompletedTaskResultLine(
           output.colors.green(figures.tick) +
-            '  ' +
+            SPACER +
             output.formatCommand(task.id) +
             output.dim(` (${timeTakenText})`)
         );
@@ -168,9 +176,10 @@ export async function createRunManyDynamicOutputRenderer({
       }
       case 'failure':
         output.addNewline();
-        writeLine(
+        output.addNewline();
+        writeCompletedTaskResultLine(
           output.colors.red(figures.cross) +
-            '  ' +
+            SPACER +
             output.formatCommand(output.colors.red(task.id))
         );
         writeCommandOutputBlock(tasksToTerminalOutputs[task.id]);
@@ -179,22 +188,24 @@ export async function createRunManyDynamicOutputRenderer({
 
     delete tasksToTerminalOutputs[task.id];
     renderPinnedFooter([]);
-    renderProjectRows();
+    renderRows();
   };
 
-  const renderProjectRows = () => {
+  const renderRows = () => {
     const max = dots.frames.length - 1;
-    const curr = projectRowsCurrentFrame;
-    projectRowsCurrentFrame = curr >= max ? 0 : curr + 1;
+    const curr = currentFrame;
+    currentFrame = curr >= max ? 0 : curr + 1;
 
     const additionalFooterRows: string[] = [''];
-    const runningTasks = projectRows.filter((row) => row.status === 'running');
+    const runningTasks = taskRows.filter((row) => row.status === 'running');
     const remainingTasks = totalTasks - totalCompletedTasks;
 
     if (runningTasks.length > 0) {
       additionalFooterRows.push(
         output.dim(
-          `   ${output.colors.cyan(figures.arrowRight)}    Executing ${
+          `${LEFT_PAD}${output.colors.cyan(
+            figures.arrowRight
+          )}${SPACER}Executing ${
             runningTasks.length
           }/${remainingTasks} remaining tasks${
             runningTasks.length > 1 ? ' in parallel' : ''
@@ -202,16 +213,11 @@ export async function createRunManyDynamicOutputRenderer({
         )
       );
       additionalFooterRows.push('');
-      for (const projectRow of runningTasks) {
+      for (const runningTask of runningTasks) {
         additionalFooterRows.push(
-          `   ${output.dim.cyan(
-            dots.frames[projectRowsCurrentFrame]
-          )}    ${output.formatCommand(
-            projectRow.projectName +
-              ':' +
-              targetName +
-              (configuration ? ':' + configuration : '')
-          )}`
+          `${LEFT_PAD}${output.dim.cyan(
+            dots.frames[currentFrame]
+          )}${SPACER}${output.formatCommand(runningTask.task.id)}`
         );
       }
       /**
@@ -241,9 +247,9 @@ export async function createRunManyDynamicOutputRenderer({
 
     if (totalSuccessfulTasks > 0) {
       additionalFooterRows.push(
-        `   ${output.colors.green(
+        `${LEFT_PAD}${output.colors.green(
           figures.tick
-        )}    ${totalSuccessfulTasks}${`/${totalCompletedTasks}`} succeeded ${output.dim(
+        )}${SPACER}${totalSuccessfulTasks}${`/${totalCompletedTasks}`} succeeded ${output.dim(
           `[${totalCachedTasks} read from cache]`
         )}`
       );
@@ -251,34 +257,29 @@ export async function createRunManyDynamicOutputRenderer({
 
     if (totalFailedTasks > 0) {
       additionalFooterRows.push(
-        `   ${output.colors.red(
+        `${LEFT_PAD}${output.colors.red(
           figures.cross
-        )}    ${totalFailedTasks}${`/${totalCompletedTasks}`} failed`
+        )}${SPACER}${totalFailedTasks}${`/${totalCompletedTasks}`} failed`
       );
     }
 
-    clearPinnedFooter();
+    moveCursorToStartOfPinnedFooter();
 
     if (additionalFooterRows.length > 1) {
-      let text = `Running target ${output.bold.cyan(
-        targetName
-      )} for ${output.bold.cyan(totalProjects)} projects`;
-      if (totalDependentTasks > 0) {
-        text += ` and ${output.bold(
-          totalDependentTasks
-        )} task(s) they depend on`;
-      }
-
+      const text = `Running ${formatTargetsAndProjects(
+        projectNames,
+        targets,
+        tasks
+      )}`;
       const taskOverridesRows = [];
       if (Object.keys(overrides).length > 0) {
-        const leftPadding = `${output.X_PADDING}       `;
         taskOverridesRows.push('');
         taskOverridesRows.push(
-          `${leftPadding}${output.dim.cyan('With additional flags:')}`
+          `${EXTENDED_LEFT_PAD}${output.dim.cyan('With additional flags:')}`
         );
         Object.entries(overrides)
           .map(([flag, value]) =>
-            output.dim.cyan(formatFlags(leftPadding, flag, value))
+            output.dim.cyan(formatFlags(EXTENDED_LEFT_PAD, flag, value))
           )
           .forEach((arg) => taskOverridesRows.push(arg));
       }
@@ -301,14 +302,17 @@ export async function createRunManyDynamicOutputRenderer({
   };
 
   lifeCycle.startCommand = () => {
-    if (totalProjects <= 0) {
-      let description = `with target ${output.colors.white.bold(targetName)}`;
-      if (args.configuration) {
-        description += ` that are configured for "${args.configuration}"`;
-      }
+    if (projectNames.length <= 0) {
       renderPinnedFooter([
         '',
-        output.applyNxPrefix('gray', `No projects ${description} were run`),
+        output.applyNxPrefix(
+          'gray',
+          `No projects with ${formatTargetsAndProjects(
+            projectNames,
+            targets,
+            tasks
+          )} were run`
+        ),
       ]);
       resolveRenderIsDonePromise();
       return;
@@ -320,27 +324,27 @@ export async function createRunManyDynamicOutputRenderer({
     clearRenderInterval();
     const timeTakenText = prettyTime(process.hrtime(start));
 
-    clearPinnedFooter();
+    moveCursorToStartOfPinnedFooter();
+    if (totalTasks === 0) {
+      renderPinnedFooter([output.applyNxPrefix('gray', 'No tasks were run')]);
+      resolveRenderIsDonePromise();
+      return;
+    }
     if (totalSuccessfulTasks === totalTasks) {
-      let text = `Successfully ran target ${output.bold(
-        targetName
-      )} for ${output.bold(totalProjects)} projects`;
-      if (totalDependentTasks > 0) {
-        text += ` and ${output.bold(
-          totalDependentTasks
-        )} task(s) they depend on`;
-      }
-
+      const text = `Successfully ran ${formatTargetsAndProjects(
+        projectNames,
+        targets,
+        tasks
+      )}`;
       const taskOverridesRows = [];
       if (Object.keys(overrides).length > 0) {
-        const leftPadding = `${output.X_PADDING}       `;
         taskOverridesRows.push('');
         taskOverridesRows.push(
-          `${leftPadding}${output.dim.green('With additional flags:')}`
+          `${EXTENDED_LEFT_PAD}${output.dim.green('With additional flags:')}`
         );
         Object.entries(overrides)
           .map(([flag, value]) =>
-            output.dim.green(formatFlags(leftPadding, flag, value))
+            output.dim.green(formatFlags(EXTENDED_LEFT_PAD, flag, value))
           )
           .forEach((arg) => taskOverridesRows.push(arg));
       }
@@ -355,31 +359,26 @@ export async function createRunManyDynamicOutputRenderer({
       if (totalCachedTasks > 0) {
         pinnedFooterLines.push(
           output.dim(
-            `${EOL}   Nx read the output from the cache instead of running the command for ${totalCachedTasks} out of ${totalTasks} tasks.`
+            `${EOL}Nx read the output from the cache instead of running the command for ${totalCachedTasks} out of ${totalTasks} tasks.`
           )
         );
       }
       renderPinnedFooter(pinnedFooterLines, 'green');
     } else {
-      let text = `Ran target ${output.bold(targetName)} for ${output.bold(
-        totalProjects
-      )} projects`;
-      if (totalDependentTasks > 0) {
-        text += ` and ${output.bold(
-          totalDependentTasks
-        )} task(s) they depend on`;
-      }
-
+      const text = `Ran ${formatTargetsAndProjects(
+        projectNames,
+        targets,
+        tasks
+      )}`;
       const taskOverridesRows = [];
       if (Object.keys(overrides).length > 0) {
-        const leftPadding = `${output.X_PADDING}       `;
         taskOverridesRows.push('');
         taskOverridesRows.push(
-          `${leftPadding}${output.dim.red('With additional flags:')}`
+          `${EXTENDED_LEFT_PAD}${output.dim.red('With additional flags:')}`
         );
         Object.entries(overrides)
           .map(([flag, value]) =>
-            output.dim.red(formatFlags(leftPadding, flag, value))
+            output.dim.red(formatFlags(EXTENDED_LEFT_PAD, flag, value))
           )
           .forEach((arg) => taskOverridesRows.push(arg));
       }
@@ -397,33 +396,38 @@ export async function createRunManyDynamicOutputRenderer({
         ...taskOverridesRows,
         '',
         output.dim(
-          `   ${output.dim(
+          `${LEFT_PAD}${output.dim(
             figures.tick
-          )}    ${totalSuccessfulTasks}${`/${totalCompletedTasks}`} succeeded ${output.dim(
+          )}${SPACER}${totalSuccessfulTasks}${`/${totalCompletedTasks}`} succeeded ${output.dim(
             `[${totalCachedTasks} read from cache]`
           )}`
         ),
         '',
-        `   ${output.colors.red(
+        `${LEFT_PAD}${output.colors.red(
           figures.cross
-        )}    ${totalFailedTasks}${`/${totalCompletedTasks}`} targets failed, including the following:`,
+        )}${SPACER}${totalFailedTasks}${`/${totalCompletedTasks}`} targets failed, including the following:`,
+        '',
         `${failedTasksForPrinting
           .map(
             (t) =>
-              `        ${output.colors.red('-')} ${output.formatCommand(
-                t.toString()
-              )}`
+              `${EXTENDED_LEFT_PAD}${output.colors.red(
+                '-'
+              )} ${output.formatCommand(t.toString())}`
           )
-          .join('\n ')}`,
+          .join('\n')}`,
       ];
 
       if (failedTasks.size > numFailedToPrint) {
         failureSummaryRows.push(
           output.dim(
-            `        ...and ${failedTasks.size - numFailedToPrint} more...`
+            `${EXTENDED_LEFT_PAD}...and ${
+              failedTasks.size - numFailedToPrint
+            } more...`
           )
         );
       }
+
+      failureSummaryRows.push(...viewLogsFooterRows(failedTasks.size));
 
       renderPinnedFooter(failureSummaryRows, 'red');
     }
@@ -434,17 +438,13 @@ export async function createRunManyDynamicOutputRenderer({
     for (const task of tasks) {
       tasksToProcessStartTimes[task.id] = process.hrtime();
     }
-    for (const projectRow of projectRows) {
-      const matchedTask = tasks.find(
-        (t) => t.target.project === projectRow.projectName
-      );
-      if (!matchedTask) {
-        continue;
+    for (const taskRow of taskRows) {
+      if (tasks.indexOf(taskRow.task) > -1) {
+        taskRow.status = 'running';
       }
-      projectRow.status = 'running';
     }
-    if (!renderProjectRowsIntervalId) {
-      renderProjectRowsIntervalId = setInterval(renderProjectRows, 100);
+    if (!renderIntervalId) {
+      renderIntervalId = setInterval(renderRows, 100);
     }
   };
 
@@ -455,11 +455,9 @@ export async function createRunManyDynamicOutputRenderer({
   lifeCycle.endTasks = (taskResults) => {
     for (let t of taskResults) {
       totalCompletedTasks++;
-      const matchingProjectRow = projectRows.find(
-        (pr) => pr.projectName === t.task.target.project
-      );
-      if (matchingProjectRow) {
-        matchingProjectRow.status = t.status;
+      const matchingTaskRow = taskRows.find((r) => r.task.id === t.task.id);
+      if (matchingTaskRow) {
+        matchingTaskRow.status = t.status;
       }
 
       switch (t.status) {
@@ -484,9 +482,8 @@ export async function createRunManyDynamicOutputRenderer({
   return { lifeCycle, renderIsDone };
 }
 
-function writeLine(line: string) {
-  const additionalXPadding = '   ';
-  process.stdout.write(output.X_PADDING + additionalXPadding + line + EOL);
+function writeCompletedTaskResultLine(line: string) {
+  output.overwriteLine(LEFT_PAD + line);
 }
 
 /**
@@ -498,8 +495,7 @@ function writeLine(line: string) {
 function writeCommandOutputBlock(commandOutput: string) {
   commandOutput = commandOutput || '';
   commandOutput = commandOutput.trimStart();
-  const additionalXPadding = '      ';
-  const lines = commandOutput.split(EOL);
+  const lines = commandOutput.split(/\r?\n/);
   let totalTrailingEmptyLines = 0;
   for (let i = lines.length - 1; i >= 0; i--) {
     if (lines[i] !== '') {
@@ -511,9 +507,7 @@ function writeCommandOutputBlock(commandOutput: string) {
     const linesToRemove = totalTrailingEmptyLines - 1;
     lines.splice(lines.length - linesToRemove, linesToRemove);
   }
+  lines.push('');
   // Indent the command output to make it look more "designed" in the context of the dynamic output
-  process.stdout.write(
-    lines.map((l) => `${output.X_PADDING}${additionalXPadding}${l}`).join(EOL) +
-      EOL
-  );
+  lines.forEach((l) => output.overwriteLine(`${EXTENDED_LEFT_PAD}${l}`));
 }

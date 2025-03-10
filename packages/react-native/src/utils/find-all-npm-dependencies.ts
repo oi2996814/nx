@@ -1,4 +1,4 @@
-import { ProjectGraph } from '@nrwl/devkit';
+import { ProjectGraph } from '@nx/devkit';
 
 export function findAllNpmDependencies(
   graph: ProjectGraph,
@@ -14,10 +14,15 @@ export function findAllNpmDependencies(
 
   const node = graph.externalNodes[projectName];
 
-  // Don't want to include '@nrwl/react-native' because React Native
+  // Don't want to include '@nx/react-native' and '@nx/expo' because React Native
   // autolink will warn that the package has no podspec file for iOS.
   if (node) {
-    if (node.name !== 'npm:@nrwl/react-native') {
+    if (
+      node.name !== `npm:@nx/react-native` &&
+      node.name !== `npm:@nrwl/react-native` &&
+      node.name !== `npm:@nx/expo` &&
+      node.name !== `npm:@nrwl/expo`
+    ) {
       list.push(node.data.packageName);
     }
   } else {

@@ -1,19 +1,23 @@
-import { readProjectConfiguration, Tree } from '@nrwl/devkit';
-import { createTreeWithEmptyV1Workspace } from '@nrwl/devkit/testing';
+import 'nx/src/internal-testing-utils/mock-project-graph';
+
+import { readProjectConfiguration, Tree } from '@nx/devkit';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import { Schema } from '../schema';
 import { updateJestConfig } from './update-jest-config';
-import { libraryGenerator } from '../../library/library';
+
+// nx-ignore-next-line
+const { libraryGenerator } = require('@nx/js');
 
 describe('updateRootJestConfig', () => {
   let tree: Tree;
   let schema: Schema;
 
   beforeEach(async () => {
-    tree = createTreeWithEmptyV1Workspace();
+    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
 
     schema = {
       projectName: 'my-lib',
@@ -23,16 +27,16 @@ describe('updateRootJestConfig', () => {
 
     await libraryGenerator(tree, {
       name: 'my-lib',
-      standaloneConfig: false,
+      directory: 'libs/my-lib',
     });
     await libraryGenerator(tree, {
       name: 'my-other-lib',
-      standaloneConfig: false,
+      directory: 'libs/my-other-lib',
     });
 
     tree.write(
       'jest.config.ts',
-      readFileSync(join(__dirname, './test-files/jest.config.ts'), 'utf-8')
+      readFileSync(join(__dirname, './__fixtures__/jest.config.ts'), 'utf-8')
     );
   });
 
@@ -72,5 +76,41 @@ describe('updateRootJestConfig', () => {
     const rootJestConfig = tree.read('jest.config.ts', 'utf-8');
 
     expect(rootJestConfig).toMatchSnapshot();
+  });
+
+  it('should delete project if root jest config is not a multi-project config', () => {
+    tree.write(
+      'jest.config.ts',
+      readFileSync(
+        join(__dirname, './__fixtures__/jest-project.config.ts'),
+        'utf-8'
+      )
+    );
+
+    updateJestConfig(tree, schema, readProjectConfiguration(tree, 'my-lib'));
+
+    const rootJestConfig = tree.read('jest.config.ts', 'utf-8');
+
+    expect(rootJestConfig).toMatchSnapshot();
+  });
+
+  it('should handle not having a root jest config file', async () => {
+    // ARRANGE
+    tree.delete('jest.config.ts');
+
+    await libraryGenerator(tree, {
+      directory: 'test',
+      bundler: 'vite',
+      unitTestRunner: 'vitest',
+    });
+
+    // ACT
+    expect(() =>
+      updateJestConfig(
+        tree,
+        { projectName: 'test', skipFormat: false, forceRemove: false },
+        readProjectConfiguration(tree, 'test')
+      )
+    ).not.toThrow();
   });
 });

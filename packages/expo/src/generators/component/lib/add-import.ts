@@ -1,6 +1,6 @@
-import { findNodes } from '@nrwl/workspace/src/utilities/typescript';
+import { findNodes } from '@nx/js';
 import * as ts from 'typescript';
-import { ChangeType, StringChange } from '@nrwl/devkit';
+import { ChangeType, StringChange } from '@nx/devkit';
 
 export function addImport(
   source: ts.SourceFile,

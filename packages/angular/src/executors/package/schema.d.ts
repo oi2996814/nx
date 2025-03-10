@@ -1,8 +1,4 @@
-export interface BuildAngularLibraryExecutorOptions {
-  project: string;
-  buildableProjectDepsInPackageJsonType?: 'dependencies' | 'peerDependencies';
-  tailwindConfig?: string;
-  tsConfig?: string;
-  updateBuildableProjectDepsInPackageJson?: boolean;
-  watch?: boolean;
-}
+import type { NgPackagrBuilderOptions } from '@angular-devkit/build-angular';
+
+export interface BuildAngularLibraryExecutorOptions
+  extends NgPackagrBuilderOptions {}

@@ -1,34 +1,75 @@
-import { ExecutorContext, logger } from '@nrwl/devkit';
-import { exec, execSync } from 'child_process';
-import { cacheDir } from '@nrwl/devkit';
-import { createAsyncIterable } from '../create-async-iterable/create-async-iteratable';
+import { cacheDir, ExecutorContext, logger } from '@nx/devkit';
+import { exec, execSync } from 'node:child_process';
+import { existsSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { createAsyncIterable } from '@nx/devkit/src/utils/async-iterable';
 import { NormalizedSwcExecutorOptions, SwcCliOptions } from '../schema';
 import { printDiagnostics } from '../typescript/print-diagnostics';
 import { runTypeCheck, TypeCheckOptions } from '../typescript/run-type-check';
-import { removeSync } from 'fs-extra';
+import { relative } from 'path';
 
 function getSwcCmd(
-  { swcrcPath, srcPath, destPath }: SwcCliOptions,
+  {
+    swcCliOptions: { swcrcPath, destPath, stripLeadingPaths },
+    root,
+    projectRoot,
+    originalProjectRoot,
+    sourceRoot,
+    inline,
+  }: NormalizedSwcExecutorOptions,
   watch = false
 ) {
-  let swcCmd = `npx swc ${srcPath} -d ${destPath} --no-swcrc --config-file=${swcrcPath}`;
+  const swcCLI = require.resolve('@swc/cli/bin/swc.js');
+  let inputDir: string;
+  // TODO(v21): remove inline feature
+  if (inline) {
+    inputDir = originalProjectRoot.split('/')[0];
+  } else {
+    if (sourceRoot) {
+      inputDir = relative(projectRoot, sourceRoot);
+    } else {
+      // If sourceRoot is not provided, check if `src` exists and use that instead.
+      // This is important for root projects to avoid compiling too many directories.
+      inputDir = existsSync(join(root, projectRoot, 'src')) ? 'src' : '.';
+    }
+  }
+
+  let swcCmd = `node ${swcCLI} ${
+    inputDir || '.'
+  } -d ${destPath} --config-file=${swcrcPath} ${
+    stripLeadingPaths ? '--strip-leading-paths' : ''
+  }`;
   return watch ? swcCmd.concat(' --watch') : swcCmd;
 }
 
 function getTypeCheckOptions(normalizedOptions: NormalizedSwcExecutorOptions) {
-  const { projectRoot, watch, tsConfig, root, outputPath } = normalizedOptions;
+  const { sourceRoot, projectRoot, watch, tsConfig, root, outputPath } =
+    normalizedOptions;
+  const inputDir =
+    // If `--strip-leading-paths` SWC option is used, we need to transpile from `src` directory.
+    !normalizedOptions.swcCliOptions.stripLeadingPaths
+      ? projectRoot
+      : sourceRoot
+      ? sourceRoot
+      : existsSync(join(root, projectRoot, 'src'))
+      ? join(projectRoot, 'src')
+      : projectRoot;
 
   const typeCheckOptions: TypeCheckOptions = {
     mode: 'emitDeclarationOnly',
     tsConfigPath: tsConfig,
     outDir: outputPath,
     workspaceRoot: root,
-    rootDir: projectRoot,
+    rootDir: inputDir,
   };
 
   if (watch) {
     typeCheckOptions.incremental = true;
     typeCheckOptions.cacheDir = cacheDir;
+  }
+
+  if (normalizedOptions.isTsSolutionSetup && normalizedOptions.skipTypeCheck) {
+    typeCheckOptions.ignoreDiagnostics = true;
   }
 
   return typeCheckOptions;
@@ -42,19 +83,28 @@ export async function compileSwc(
   logger.log(`Compiling with SWC for ${context.projectName}...`);
 
   if (normalizedOptions.clean) {
-    removeSync(normalizedOptions.outputPath);
+    rmSync(normalizedOptions.outputPath, { recursive: true, force: true });
   }
 
-  const swcCmdLog = execSync(getSwcCmd(normalizedOptions.swcCliOptions), {
-    cwd: normalizedOptions.swcCliOptions.swcCwd,
-  }).toString();
-  logger.log(swcCmdLog.replace(/\n/, ''));
-  const isCompileSuccess = swcCmdLog.includes('Successfully compiled');
+  try {
+    const swcCmdLog = execSync(getSwcCmd(normalizedOptions), {
+      encoding: 'utf8',
+      cwd: normalizedOptions.swcCliOptions.swcCwd,
+      windowsHide: false,
+      stdio: 'pipe',
+    });
+    logger.log(swcCmdLog.replace(/\n/, ''));
+  } catch (error) {
+    logger.error('SWC compilation failed');
+    if (error.stderr) {
+      logger.error(error.stderr.toString());
+    }
+    return { success: false };
+  }
 
-  await postCompilationCallback();
-
-  if (normalizedOptions.skipTypeCheck) {
-    return { success: isCompileSuccess };
+  if (normalizedOptions.skipTypeCheck && !normalizedOptions.isTsSolutionSetup) {
+    await postCompilationCallback();
+    return { success: true };
   }
 
   const { errors, warnings } = await runTypeCheck(
@@ -67,7 +117,11 @@ export async function compileSwc(
     await printDiagnostics(errors, warnings);
   }
 
-  return { success: !hasErrors && isCompileSuccess };
+  await postCompilationCallback();
+  return {
+    success: !hasErrors,
+    outfile: normalizedOptions.mainOutputPath,
+  };
 }
 
 export async function* compileSwcWatch(
@@ -84,7 +138,7 @@ export async function* compileSwcWatch(
   let initialPostCompile = true;
 
   if (normalizedOptions.clean) {
-    removeSync(normalizedOptions.outputPath);
+    rmSync(normalizedOptions.outputPath, { recursive: true, force: true });
   }
 
   return yield* createAsyncIterable<{ success: boolean; outfile: string }>(
@@ -94,10 +148,10 @@ export async function* compileSwcWatch(
       let stderrOnData: () => void;
       let watcherOnExit: () => void;
 
-      const swcWatcher = exec(
-        getSwcCmd(normalizedOptions.swcCliOptions, true),
-        { cwd: normalizedOptions.swcCliOptions.swcCwd }
-      );
+      const swcWatcher = exec(getSwcCmd(normalizedOptions, true), {
+        cwd: normalizedOptions.swcCliOptions.swcCwd,
+        windowsHide: false,
+      });
 
       processOnExit = () => {
         swcWatcher.kill();
@@ -117,7 +171,10 @@ export async function* compileSwcWatch(
             initialPostCompile = false;
           }
 
-          if (normalizedOptions.skipTypeCheck) {
+          if (
+            normalizedOptions.skipTypeCheck ||
+            normalizedOptions.isTsSolutionSetup
+          ) {
             next(getResult(swcStatus));
             return;
           }

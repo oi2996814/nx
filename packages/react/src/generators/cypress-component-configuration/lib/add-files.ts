@@ -1,65 +1,83 @@
 import {
-  generateFiles,
+  addDependenciesToPackageJson,
   joinPathFragments,
+  logger,
   ProjectConfiguration,
   Tree,
   visitNotIgnoredFiles,
-} from '@nrwl/devkit';
-import * as ts from 'typescript';
-import { getComponentNode } from '../../../utils/ast-utils';
+} from '@nx/devkit';
+import { nxVersion } from 'nx/src/utils/versions';
 import { componentTestGenerator } from '../../component-test/component-test';
-import { CypressComponentConfigurationSchema } from '../schema';
+import type { CypressComponentConfigurationSchema } from '../schema';
+import { getActualBundler, isComponent } from '../../../utils/ct-utils';
+import { FoundTarget } from '@nx/cypress/src/utils/find-target-options';
 
-const allowedFileExt = new RegExp(/\.[jt]sx?/g);
-const isSpecFile = new RegExp(/(spec|test)\./g);
-
-export function addFiles(
+export async function addFiles(
   tree: Tree,
   projectConfig: ProjectConfiguration,
-  options: CypressComponentConfigurationSchema
+  options: CypressComponentConfigurationSchema,
+  found: FoundTarget
 ) {
-  const cypressConfigPath = joinPathFragments(
-    projectConfig.root,
-    'cypress.config.ts'
+  // must dyanmicaly import to prevent packages not using cypress from erroring out
+  // when importing react
+  const { addMountDefinition, addDefaultCTConfig } = await import(
+    '@nx/cypress/src/utils/config'
   );
-  if (tree.exists(cypressConfigPath)) {
-    tree.delete(cypressConfigPath);
+
+  // Specifically undefined to allow Remix workaround of passing an empty string
+  const actualBundler = await getActualBundler(tree, options, found);
+
+  if (options.bundler && options.bundler !== actualBundler) {
+    logger.warn(
+      `You have specified ${options.bundler} as the bundler but this project is configured to use ${actualBundler}.
+      This may cause errors. If you are seeing errors, try removing the --bundler option.`
+    );
   }
 
-  generateFiles(
-    tree,
-    joinPathFragments(__dirname, '..', 'files'),
+  const bundlerToUse = options.bundler ?? actualBundler;
+
+  const commandFile = joinPathFragments(
     projectConfig.root,
-    {
-      tpl: '',
-    }
+    'cypress',
+    'support',
+    'component.ts'
   );
+
+  const updatedCommandFile = await addMountDefinition(
+    tree.read(commandFile, 'utf-8')
+  );
+  tree.write(
+    commandFile,
+    `import { mount } from 'cypress/react18';\n${updatedCommandFile}`
+  );
+
+  if (
+    options.bundler === 'webpack' ||
+    (!options.bundler && actualBundler === 'webpack')
+  ) {
+    addDependenciesToPackageJson(tree, {}, { '@nx/webpack': nxVersion });
+  }
+
+  if (
+    options.bundler === 'vite' ||
+    (!options.bundler && actualBundler === 'vite')
+  ) {
+    addDependenciesToPackageJson(tree, {}, { '@nx/vite': nxVersion });
+  }
 
   if (options.generateTests) {
+    const filePaths = [];
     visitNotIgnoredFiles(tree, projectConfig.sourceRoot, (filePath) => {
       if (isComponent(tree, filePath)) {
-        componentTestGenerator(tree, {
-          project: options.project,
-          componentPath: filePath,
-        });
+        filePaths.push(filePath);
       }
     });
+
+    for (const filePath of filePaths) {
+      await componentTestGenerator(tree, {
+        project: options.project,
+        componentPath: filePath,
+      });
+    }
   }
-}
-
-function isComponent(tree: Tree, filePath: string): boolean {
-  if (isSpecFile.test(filePath) || !allowedFileExt.test(filePath)) {
-    return false;
-  }
-
-  const content = tree.read(filePath, 'utf-8');
-  const sourceFile = ts.createSourceFile(
-    filePath,
-    content,
-    ts.ScriptTarget.Latest,
-    true
-  );
-
-  const cmpDeclaration = getComponentNode(sourceFile);
-  return !!cmpDeclaration;
 }

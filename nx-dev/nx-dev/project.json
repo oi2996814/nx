@@ -1,4 +1,5 @@
 {
+  "name": "nx-dev",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "nx-dev/nx-dev",
   "projectType": "application",
@@ -6,44 +7,43 @@
     "build": {
       "dependsOn": [
         {
-          "target": "build-base",
-          "projects": "self"
+          "target": "build-base"
         }
       ],
       "executor": "nx:run-commands",
       "options": {
-        "outputPath": "dist/nx-dev/nx-dev",
         "commands": [
           "nx run nx-dev:sitemap",
           "ts-node -P ./scripts/tsconfig.scripts.json ./scripts/documentation/internal-link-checker.ts"
         ],
         "parallel": false
-      }
+      },
+      "inputs": [
+        "production",
+        "^production",
+        "{workspaceRoot}/scripts/tsconfig.scripts.json",
+        "{workspaceRoot}/scripts/documentation/internal-link-checker.ts"
+      ],
+      "outputs": ["{workspaceRoot}/dist/nx-dev/nx-dev"]
     },
     "sitemap": {
       "executor": "nx:run-commands",
-      "outputs": ["{options.outputPath}"],
+      "outputs": ["{workspaceRoot}/dist/nx-dev/nx-dev/public"],
       "options": {
-        "outputPath": "dist/nx-dev/nx-dev/public",
-        "command": "yarn next-sitemap --config ./nx-dev/nx-dev/next-sitemap.js"
-      }
-    },
-    "sync-documentation": {
-      "executor": "nx:run-commands",
-      "outputs": ["nx-dev/nx-dev/public/documentation"],
-      "options": {
-        "command": "ts-node -P ./scripts/tsconfig.scripts.json ./scripts/documentation/nx-dev-docs-latest-sync.ts"
+        "command": "pnpm next-sitemap --config ./nx-dev/nx-dev/next-sitemap.config.js"
       }
     },
     "generate-og-images": {
       "executor": "nx:run-commands",
-      "outputs": ["nx-dev/nx-dev/public/images/open-graph"],
+      "outputs": ["{projectRoot}/public/images/open-graph"],
       "options": {
         "command": "ts-node -P ./scripts/tsconfig.scripts.json ./scripts/documentation/open-graph/generate-images.ts"
       }
     },
     "build-base": {
-      "executor": "@nrwl/next:build",
+      "parallelism": false,
+      "executor": "@nx/next:build",
+      "dependsOn": ["copy-docs"],
       "outputs": ["{options.outputPath}"],
       "options": {
         "root": "nx-dev/nx-dev",
@@ -56,8 +56,31 @@
         "production": {}
       }
     },
+    "copy-docs": {
+      "inputs": ["{workspaceRoot}/docs/**/*"],
+      "outputs": ["{projectRoot}/public/documentation"],
+      "command": "node ./copy-docs.js",
+      "options": {
+        "cwd": "nx-dev/nx-dev"
+      }
+    },
+    "serve-docs": {
+      "executor": "nx:run-commands",
+      "options": {
+        "commands": [
+          "nx watch --projects=docs -- nx run nx-dev:copy-docs",
+          "nx run nx-dev:serve"
+        ],
+        "parallel": true
+      }
+    },
+    "start": {
+      "dependsOn": ["build-base"],
+      "command": "nx run nx-dev:serve:production"
+    },
     "serve": {
-      "executor": "@nrwl/next:server",
+      "executor": "@nx/next:server",
+      "dependsOn": ["copy-docs"],
       "options": {
         "buildTarget": "nx-dev:build-base",
         "dev": true
@@ -76,7 +99,8 @@
     },
     "deploy-build": {
       "executor": "nx:run-commands",
-      "outputs": ["nx-dev/nx-dev/public/documentation"],
+      "outputs": ["{projectRoot}/public/documentation"],
+      "dependsOn": ["@nx/nx-source:documentation"],
       "options": {
         "commands": [
           {
@@ -84,33 +108,20 @@
             "description": "OG images generation"
           },
           {
+            "command": "nx copy-docs nx-dev",
+            "description": "Copy generated docs to build output"
+          },
+          {
+            "command": "npx ts-node -P scripts/tsconfig.scripts.json scripts/documentation/plugin-quality-indicators.ts",
+            "description": "Fetch plugin data"
+          },
+          {
             "command": "nx run nx-dev:build",
             "description": "NextJs build step"
           }
         ],
         "color": true,
-        "parallel": true
-      }
-    },
-    "export": {
-      "executor": "@nrwl/next:export",
-      "options": {
-        "buildTarget": "nx-dev:build:production"
-      }
-    },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "options": {
-        "lintFilePatterns": ["nx-dev/nx-dev/**/*.{ts,tsx,js,jsx}"]
-      },
-      "outputs": ["{options.outputFile}"]
-    },
-    "test": {
-      "executor": "@nrwl/jest:jest",
-      "outputs": ["coverage/nx-dev/nx-dev"],
-      "options": {
-        "jestConfig": "nx-dev/nx-dev/jest.config.ts",
-        "passWithNoTests": true
+        "parallel": false
       }
     }
   },

@@ -1,17 +1,19 @@
-import { Linter } from '@nrwl/linter';
+import type { Linter, LinterType } from '@nx/eslint';
 
 export interface Schema {
-  name: string;
+  directory: string;
+  name?: string;
   prefix?: string;
   style?: string;
-  bundler?: 'webpack' | 'none';
+  bundler?: 'webpack' | 'none' | 'vite';
   compiler?: 'babel' | 'swc';
   skipFormat?: boolean;
-  directory?: string;
   tags?: string;
-  unitTestRunner?: 'jest' | 'none';
-  e2eTestRunner?: 'cypress' | 'none';
-  linter?: Linter;
-  standaloneConfig?: boolean;
+  unitTestRunner?: 'jest' | 'vitest' | 'none';
+  inSourceTests?: boolean;
+  e2eTestRunner?: 'cypress' | 'playwright' | 'none';
+  linter?: Linter | LinterType;
   setParserOptionsProject?: boolean;
+  strict?: boolean;
+  addPlugin?: boolean;
 }

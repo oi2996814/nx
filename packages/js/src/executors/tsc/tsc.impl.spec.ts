@@ -1,9 +1,7 @@
-import { ExecutorContext } from '@nrwl/devkit';
+import { ExecutorContext } from '@nx/devkit';
 import { ExecutorOptions } from '../../utils/schema';
-import {
-  normalizeOptions,
-  createTypeScriptCompilationOptions,
-} from './tsc.impl';
+import { normalizeOptions } from './lib';
+import { createTypeScriptCompilationOptions } from './tsc.impl';
 
 describe('tscExecutor', () => {
   let context: ExecutorContext;
@@ -13,11 +11,15 @@ describe('tscExecutor', () => {
     context = {
       root: '/root',
       cwd: '/root',
-      workspace: {
+      projectGraph: {
+        nodes: {},
+        dependencies: {},
+      },
+      projectsConfigurations: {
         version: 2,
         projects: {},
-        npmScope: 'test',
       },
+      nxJsonConfiguration: {},
       isVerbose: false,
       projectName: 'example',
       targetName: 'build',
@@ -36,19 +38,14 @@ describe('tscExecutor', () => {
   describe('createTypeScriptCompilationOptions', () => {
     it('should create typescript compilation options for valid config', () => {
       const result = createTypeScriptCompilationOptions(
-        normalizeOptions(
-          testOptions,
-          '/root',
-          '/root/libs/ui/src',
-          '/root/libs/ui'
-        ),
+        normalizeOptions(testOptions, '/root', 'libs/ui/src', 'libs/ui'),
         context
       );
 
       expect(result).toMatchObject({
         outputPath: '/root/dist/libs/ui',
         projectName: 'example',
-        projectRoot: '/root/libs/ui',
+        projectRoot: 'libs/ui',
         rootDir: '/root/libs/ui',
         tsConfig: '/root/libs/ui/tsconfig.json',
         watch: false,
@@ -61,8 +58,8 @@ describe('tscExecutor', () => {
         normalizeOptions(
           { ...testOptions, rootDir: 'libs/ui/src' },
           '/root',
-          '/root/libs/ui/src',
-          '/root/libs/ui'
+          'libs/ui/src',
+          'libs/ui'
         ),
         context
       );

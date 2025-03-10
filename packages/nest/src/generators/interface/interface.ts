@@ -1,19 +1,20 @@
-import type { Tree } from '@nrwl/devkit';
-import { convertNxGenerator } from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
 import type { NestGeneratorOptions } from '../utils';
 import { normalizeOptions, runNestSchematic } from '../utils';
 
 export type InterfaceGeneratorOptions = NestGeneratorOptions;
 
-export function interfaceGenerator(
+export async function interfaceGenerator(
   tree: Tree,
   rawOptions: InterfaceGeneratorOptions
 ): Promise<any> {
-  const options = normalizeOptions(tree, rawOptions);
+  const options = await normalizeOptions(tree, rawOptions, {
+    allowedFileExtensions: ['ts'],
+    skipLanguageOption: true,
+    suffix: 'interface',
+  });
 
   return runNestSchematic(tree, 'interface', options);
 }
 
 export default interfaceGenerator;
-
-export const interfaceSchematic = convertNxGenerator(interfaceGenerator);

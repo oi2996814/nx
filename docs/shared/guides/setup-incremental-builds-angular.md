@@ -1,33 +1,12 @@
+---
+title: Setup Incremental Builds for Angular Applications
+description: Learn how to configure your Angular applications in Nx to use incremental builds, improving build performance by only rebuilding what changed.
+---
+
 # Setup incremental builds for Angular applications
 
-In this guide we’ll specifically look into which changes need to be made to enable incremental builds for Angular
+In this guide we'll specifically look into which changes need to be made to enable incremental builds for Angular
 applications.
-
-{% callout type="caution" title="Nx > 10.4.0" %}
-Incremental builds requires Nx version 10.4.0 or later.
-{% /callout %}
-
-## Requirements
-
-It’s required that you run the Angular compatibility compiler (`ngcc`) after every package installation if you have Ivy
-enabled. This comes configured by default in every Nx workspace. The incremental build relies on the fact that `ngcc`
-must have already been run. You can check your `package.json` and make sure you have the following:
-
-```json
-{
-  ...
-  "scripts": {
-    ...
-    "postinstall": "ngcc --properties es2015 browser module main",
-    ...
-  }
-  ...
-}
-```
-
-{% callout type="warning" title="ngcc limitations" %}
-Please note that `ngcc` doesn’t support `pnpm` ([#32087](https://github.com/angular/angular/issues/32087#issuecomment-523225437) and [#38023](https://github.com/angular/angular/issues/38023#issuecomment-732423078)), so you need to use either `yarn` or `npm`.
-{% /callout %}
 
 ## Use buildable libraries
 
@@ -35,22 +14,22 @@ To enable incremental builds you need to use buildable libraries.
 
 You can generate a new buildable library with:
 
-```bash
-nx g @nrwl/angular:lib my-lib --buildable
+```shell
+nx g @nx/angular:lib libs/my-lib --buildable
 ```
 
-The generated buildable library uses the `@nrwl/angular:ng-packagr-lite` executor which is optimized for the incremental
+The generated buildable library uses the `@nx/angular:ng-packagr-lite` executor which is optimized for the incremental
 builds scenario:
 
-```json
+```jsonc
 {
   "projectType": "library",
   ...
   "targets": {
     "build": {
-      "executor": "@nrwl/angular:ng-packagr-lite",
+      "executor": "@nx/angular:ng-packagr-lite",
       "outputs": [
-        "dist/libs/my-lib"
+        "{workspaceRoot}/dist/libs/my-lib"
       ],
       "options": {
         ...
@@ -67,23 +46,42 @@ builds scenario:
 ```
 
 {% callout type="warning" title="More details" %}
-Please note that it is important to keep the `outputs` property in sync with the `dest` property in the file `ng-package.json` located inside the library root. When a library is generated, this is configured correctly, but if the path is later changed in `ng-package.json`, it needs to be updated as well in the project configuration.
+Please note that it is important to keep the `outputs` property in sync with the `dest` property in the file
+`ng-package.json` located inside the library root. When a library is generated, this is configured correctly, but if the
+path is later changed in `ng-package.json`, it needs to be updated as well in the project configuration.
 
-The `@nrwl/angular:package` executor also supports incremental builds. It is used to build and package an Angular library to be distributed as an NPM package following the Angular Package Format (APF) specification. It will be automatically configured when generating a publishable library (`nx g @nrwl/angular:lib my-lib --publishable --importPath my-lib`).
+The `@nx/angular:package` executor also supports incremental builds. It is used to build and package an Angular library
+to be distributed as an NPM package following the Angular Package Format (APF) specification. It will be automatically
+configured when generating a publishable library (`nx g @nx/angular:lib libs/my-lib --publishable --importPath my-lib`).
 {% /callout %}
 
 ## Adjust the application executor
 
-Change your Angular application’s "build" target executor to `@nrwl/angular:webpack-browser` and the "serve" target
-executor to `@nrwl/web:file-server` as shown below:
+{% callout type="note" title="Angular Esbuild Performance" %}
+From internal testing done at Nx, the build time saved from using incremental builds when using Esbuild with Angular is
+not as effective as the time saved when using Webpack with Angular.
+Angular's build time with Esbuild already provides a great performance boost and therefore overall time saved may not
+warrant using incremental builds with Esbuild for Angular
+{% /callout %}
 
-```json
+Change your Angular application's "build" target executor to Nx's version of builder you're currently using and the "
+serve" target executor to `@nx/angular:dev-server` as shown below.
+
+- `@angular-devkit/build-angular:application` -> `@nx/angular:application`
+- `@angular-devkit/build-angular:browser-esbuild` -> `@nx/angular:browser-esbuild`
+- `@angular/build:browser` -> `@nx/angular:webpack-browser`
+
+{% tabs %}
+{% tab label="@angular-devkit/build-angular:application" %}
+
+```jsonc {% fileName="project.json" %}
 {
   "projectType": "application",
   ...
   "targets": {
     "build": {
-      "executor": "@nrwl/angular:webpack-browser",
+      "dependsOn": ["^build"],
+      "executor": "@nx/angular:application",
       "outputs": [
         "{options.outputPath}"
       ],
@@ -97,9 +95,10 @@ executor to `@nrwl/web:file-server` as shown below:
       "defaultConfiguration": "production"
     },
     "serve": {
-      "executor": "@nrwl/web:file-server",
+      "executor": "@nx/angular:dev-server",
       "options": {
-        "buildTarget": "my-app:build"
+        "buildTarget": "my-app:build",
+        "buildLibsFromSource": false
       },
       "configurations": {
         "production": {
@@ -112,32 +111,17 @@ executor to `@nrwl/web:file-server` as shown below:
 },
 ```
 
-## Running and serving incremental builds
+{% /tab %}
+{% tab label="@angular-devkit/build-angular:browser-esbuild" %}
 
-To build an application incrementally use the following command:
-
-```bash
-nx build my-app --parallel
-```
-
-To serve an application incrementally use this command:
-
-```bash
-nx serve my-app --parallel
-```
-
-{% callout type="note" title="Project configuration option" %}
-You can specify the `--parallel` flags as part of the options property on the file-server executor in
-your `project.json` file. The file-server executor will pass those to the `nx build` command it invokes.
-{% /callout %}
-
-```json
+```jsonc {% fileName="project.json" %}
 {
   "projectType": "application",
   ...
   "targets": {
     "build": {
-      "executor": "@nrwl/angular:webpack-browser",
+      "dependsOn": ["^build"],
+      "executor": "@nx/angular:browser-esbuild",
       "outputs": [
         "{options.outputPath}"
       ],
@@ -147,13 +131,14 @@ your `project.json` file. The file-server executor will pass those to the `nx bu
       },
       "configurations": {
         ...
-      }
+      },
+      "defaultConfiguration": "production"
     },
     "serve": {
-      "executor": "@nrwl/web:file-server",
+      "executor": "@nx/angular:dev-server",
       "options": {
         "buildTarget": "my-app:build",
-        "parallel": true
+        "buildLibsFromSource": false
       },
       "configurations": {
         "production": {
@@ -166,10 +151,115 @@ your `project.json` file. The file-server executor will pass those to the `nx bu
 },
 ```
 
+{% /tab %}
+{% tab label="@angular-devkit/build-angular:browser" %}
+
+```jsonc {% fileName="project.json" %}
+{
+  "projectType": "application",
+  ...
+  "targets": {
+    "build": {
+      "dependsOn": ["^build"],
+      "executor": "@nx/angular:webpack-browser",
+      "outputs": [
+        "{options.outputPath}"
+      ],
+      "options": {
+        "buildLibsFromSource": false
+        ...
+      },
+      "configurations": {
+        ...
+      },
+      "defaultConfiguration": "production"
+    },
+    "serve": {
+      "executor": "@nx/angular:dev-server",
+      "options": {
+        "buildTarget": "my-app:build",
+        "buildLibsFromSource": false
+      },
+      "configurations": {
+        "production": {
+          "buildTarget": "my-app:build:production"
+        }
+      }
+    },
+    ...
+  }
+},
+```
+
+{% /tab %}
+{% /tabs %}
+
+### Add Executor to Target Defaults
+
+If you'd like to avoid adding `"dependsOn": ["^build"]` to every application in your workspace that uses one of the
+required executors you can add it to the `targetDefaults` section of the `nx.json`:
+
+{% tabs %}
+{% tab label="@nx/angular:application" %}
+
+```json {% fileName="nx.json" %}
+{
+  "targetDefaults": {
+    "@nx/angular:application": {
+      "dependsOn": ["^build"]
+    }
+  }
+}
+```
+
+{% /tab %}
+{% tab label="@nx/angular:browser-esbuild" %}
+
+```json {% fileName="nx.json" %}
+{
+  "targetDefaults": {
+    "@nx/angular:browser-esbuild": {
+      "dependsOn": ["^build"]
+    }
+  }
+}
+```
+
+{% /tab %}
+{% tab label="@nx/angular:webpack-browser" %}
+
+```json {% fileName="nx.json" %}
+{
+  "targetDefaults": {
+    "@nx/angular:webpack-browser": {
+      "dependsOn": ["^build"]
+    }
+  }
+}
+```
+
+{% /tab %}
+{% /tabs %}
+
+## Running and serving incremental builds
+
+To build an application incrementally use the following command:
+
+```shell
+nx build my-app --parallel
+```
+
+To serve an application incrementally use this command:
+
+```shell
+nx serve my-app
+```
+
 ### Build target name
 
 It is required to use the same target name for the build target (target using one of the executors that support
-incremental builds: `@nrwl/angular:webpack-browser`, `@nrwl/angular:package` and `@nrwl/angular:ng-packagr-lite`) in the
+incremental builds: `@nx/angular:application`, `@nx/angular:browser-esbuild`, `@nx/angular:webpack-browser`,
+`@nx/angular:package` and `@nx/angular:ng-packagr-lite`) in the
 project being built and the buildable libraries it depends on. The executors that support incremental builds rely on the
 build target name of the project to identify which of the libraries it depends on are buildable.
 
@@ -178,13 +268,13 @@ targets), you need to make sure the build target name of all the relevant projec
 
 Say you have the same application above with a configuration as follows:
 
-```json
+```jsonc {% fileName="project.json" %}
 {
   "projectType": "application",
   ...
   "targets": {
     "build-base": {
-      "executor": "@nrwl/angular:webpack-browser",
+      "executor": "@nx/angular:webpack-browser",
       "outputs": [
         "{options.outputPath}"
       ],
@@ -213,10 +303,10 @@ Say you have the same application above with a configuration as follows:
       }
     },
     "serve": {
-      "executor": "@nrwl/web:file-server",
+      "executor": "@nx/angular:dev-server",
       "options": {
         "buildTarget": "my-app:build-base",
-        "parallel": true
+        "buildLibsFromSource": false
       },
       "configurations": {
         "production": {
@@ -247,15 +337,15 @@ And the `targetDefaults` configured in the `nx.json` as:
 The build target name of the application is `build-base`. Therefore, the build target name of the buildable libraries it
 depends on must also be `build-base`:
 
-```json
+```jsonc
 {
   "projectType": "library",
   ...
   "targets": {
     "build-base": {
-      "executor": "@nrwl/angular:ng-packagr-lite",
+      "executor": "@nx/angular:ng-packagr-lite",
       "outputs": [
-        "dist/libs/my-lib"
+        "{workspaceRoot}/dist/libs/my-lib"
       ],
       "options": {
         ...

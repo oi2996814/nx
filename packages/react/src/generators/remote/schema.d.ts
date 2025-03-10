@@ -1,26 +1,33 @@
-import { Linter } from '@nrwl/linter';
-
-import { SupportedStyles } from '../../../typings';
+import type { Linter, LinterType } from '@nx/eslint';
+import type { SupportedStyles } from '../../../typings/style';
+import type { NormalizedSchema as ApplicationNormalizedSchema } from '../application/schema';
 
 export interface Schema {
-  name: string;
-  style: SupportedStyles;
-  skipFormat: boolean;
-  directory?: string;
-  tags?: string;
-  unitTestRunner: 'jest' | 'none';
-  e2eTestRunner: 'cypress' | 'none';
-  linter: Linter;
-  pascalCaseFiles?: boolean;
   classComponent?: boolean;
-  routing?: boolean;
-  skipWorkspaceJson?: boolean;
-  js?: boolean;
-  globalCss?: boolean;
-  strict?: boolean;
-  setParserOptionsProject?: boolean;
-  standaloneConfig?: boolean;
   compiler?: 'babel' | 'swc';
-  host?: string;
   devServerPort?: number;
+  directory: string;
+  e2eTestRunner: 'cypress' | 'playwright' | 'none';
+  globalCss?: boolean;
+  host?: string;
+  js?: boolean;
+  linter: Linter | LinterType;
+  name?: string;
+  routing?: boolean;
+  setParserOptionsProject?: boolean;
+  skipFormat: boolean;
+  skipNxJson?: boolean;
+  skipPackageJson?: boolean;
+  ssr?: boolean;
+  strict?: boolean;
+  style: SupportedStyles;
+  tags?: string;
+  unitTestRunner: 'jest' | 'vitest' | 'none';
+  typescriptConfiguration?: boolean;
+  dynamic?: boolean;
+  bundler?: 'rspack' | 'webpack';
+}
+
+export interface NormalizedSchema extends ApplicationNormalizedSchema {
+  typescriptConfiguration: boolean;
 }

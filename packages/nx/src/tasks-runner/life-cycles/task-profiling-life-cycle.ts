@@ -1,4 +1,4 @@
-import { LifeCycle, TaskMetadata } from '../life-cycle';
+import { LifeCycle, TaskMetadata, TaskResult } from '../life-cycle';
 import { TaskStatus } from '../tasks-runner';
 
 import { performance } from 'perf_hooks';
@@ -26,20 +26,22 @@ export class TaskProfilingLifeCycle implements LifeCycle {
       this.registerGroup(groupId);
     }
     for (let t of tasks) {
-      this.timings[`${t.target.project}:${t.target.target}`] = {
-        perfStart: performance.now(),
+      this.timings[t.id] = {
+        perfStart: Date.now(),
       };
     }
   }
 
-  endTasks(
-    taskResults: Array<{ task: Task; status: TaskStatus; code: number }>,
-    metadata: TaskMetadata
-  ): void {
+  endTasks(taskResults: TaskResult[], metadata: TaskMetadata): void {
     for (let tr of taskResults) {
-      this.timings[
-        `${tr.task.target.project}:${tr.task.target.target}`
-      ].perfEnd = performance.now();
+      if (tr.task.startTime) {
+        this.timings[tr.task.id].perfStart = tr.task.startTime;
+      }
+      if (tr.task.endTime) {
+        this.timings[tr.task.id].perfEnd = tr.task.endTime;
+      } else {
+        this.timings[tr.task.id].perfEnd = Date.now();
+      }
     }
     this.recordTaskCompletions(taskResults, metadata);
   }
@@ -54,8 +56,7 @@ export class TaskProfilingLifeCycle implements LifeCycle {
     { groupId }: TaskMetadata
   ) {
     for (const { task, status } of tasks) {
-      const { perfStart, perfEnd } =
-        this.timings[`${task.target.project}:${task.target.target}`];
+      const { perfStart, perfEnd } = this.timings[task.id];
       this.profile.push({
         name: task.id,
         cat: Object.values(task.target).join(','),

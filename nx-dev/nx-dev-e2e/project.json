@@ -1,27 +1,16 @@
 {
+  "name": "nx-dev-e2e",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "nx-dev/nx-dev-e2e/src",
   "projectType": "application",
   "targets": {
-    "e2e": {
-      "dependsOn": [
-        {
-          "target": "build-base",
-          "projects": "dependencies"
-        }
-      ],
-      "executor": "@nrwl/cypress:cypress",
-      "options": {
-        "cypressConfig": "nx-dev/nx-dev-e2e/cypress.json",
-        "devServerTarget": "nx-dev:serve:production"
-      }
+    "pw-e2e": {
+      "command": "echo 'pw-e2e disabled'",
+      "cache": true
     },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "options": {
-        "lintFilePatterns": ["nx-dev/nx-dev-e2e/**/*.{js,ts}"]
-      },
-      "outputs": ["{options.outputFile}"]
+    "e2e-ci": {
+      "command": "echo 'e2e-ci disabled'",
+      "cache": true
     }
   },
   "tags": ["scope:nx-dev", "type:e2e"],

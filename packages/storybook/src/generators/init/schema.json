@@ -5,20 +5,27 @@
   "$id": "init-storybook-plugin",
   "type": "object",
   "properties": {
-    "uiFramework": {
-      "type": "string",
-      "description": "Storybook UI Framework to use.",
-      "enum": [
-        "@storybook/angular",
-        "@storybook/react",
-        "@storybook/html",
-        "@storybook/web-components",
-        "@storybook/vue",
-        "@storybook/vue3",
-        "@storybook/svelte",
-        "@storybook/react-native"
-      ],
-      "x-prompt": "What UI framework plugin should storybook use?"
+    "skipFormat": {
+      "description": "Skip formatting files.",
+      "type": "boolean",
+      "default": false
+    },
+    "skipPackageJson": {
+      "description": "Do not add dependencies to `package.json`.",
+      "type": "boolean",
+      "default": false
+    },
+    "keepExistingVersions": {
+      "type": "boolean",
+      "x-priority": "internal",
+      "description": "Keep existing dependencies versions",
+      "default": false
+    },
+    "updatePackageScripts": {
+      "type": "boolean",
+      "x-priority": "internal",
+      "description": "Update `package.json` scripts with inferred targets",
+      "default": false
     }
   }
 }

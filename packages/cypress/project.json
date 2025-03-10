@@ -1,23 +1,12 @@
 {
+  "name": "cypress",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/cypress",
   "projectType": "library",
   "targets": {
-    "test": {
-      "executor": "@nrwl/jest:jest",
-      "options": {
-        "jestConfig": "packages/cypress/jest.config.ts",
-        "passWithNoTests": true
-      },
-      "outputs": ["coverage/packages/cypress"]
-    },
     "build-base": {
-      "executor": "@nrwl/js:tsc",
+      "executor": "@nx/js:tsc",
       "options": {
-        "outputPath": "build/packages/cypress",
-        "tsConfig": "packages/cypress/tsconfig.lib.json",
-        "main": "packages/cypress/index.ts",
-        "updateBuildableProjectDepsInPackageJson": false,
         "assets": [
           {
             "input": "packages/cypress",
@@ -52,35 +41,14 @@
             "output": "/"
           }
         ]
-      },
-      "outputs": ["{options.outputPath}"]
+      }
     },
     "build": {
       "executor": "nx:run-commands",
-      "outputs": ["build/packages/cypress"],
+      "outputs": ["{workspaceRoot}/build/packages/cypress"],
       "options": {
         "command": "node ./scripts/copy-readme.js cypress"
       }
-    },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "options": {
-        "lintFilePatterns": [
-          "packages/cypress/**/*.ts",
-          "packages/cypress/**/*.spec.ts",
-          "packages/cypress/**/*.spec.tsx",
-          "packages/cypress/**/*.spec.js",
-          "packages/cypress/**/*.spec.jsx",
-          "packages/cypress/**/*.d.ts",
-          "packages/cypress/**/executors/**/schema.json",
-          "packages/cypress/**/generators/**/schema.json",
-          "packages/cypress/generators.json",
-          "packages/cypress/executors.json",
-          "packages/cypress/package.json",
-          "packages/cypress/migrations.json"
-        ]
-      },
-      "outputs": ["{options.outputFile}"]
     }
   }
 }

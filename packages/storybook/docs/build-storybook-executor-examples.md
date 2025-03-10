@@ -1,3 +1,8 @@
+---
+title: Storybook builder executor examples
+description: This page contains examples for the @nx/storybook:build executor.
+---
+
 `project.json`:
 
 ```json
@@ -6,14 +11,11 @@
     "targets": {
         //...
         "build-storybook": {
-            "executor": "@nrwl/storybook:build",
-            "outputs": ["{options.outputPath}"],
+            "executor": "@nx/storybook:build",
+            "outputs": ["{options.outputDir}"],
             "options": {
-                "uiFramework": "@storybook/react",
-                "outputPath": "dist/storybook/ui",
-                "config": {
-                    "configFolder": "libs/ui/.storybook"
-                }
+                "outputDir": "dist/storybook/ui",
+                "configDir": "libs/ui/.storybook"
             },
             "configurations": {
                 "ci": {
@@ -33,30 +35,6 @@ nx run ui:build-storybook
 ### For non-Angular projects
 
 {% tabs %}
-{% tab label="Setting the uiFramework" %}
-
-You can change the `uiFramework` option, to correspond to the framework you are using for your project. Supported values are: `"@storybook/react"`, `"@storybook/html"`, `"@storybook/web-components"`, `"@storybook/vue"`, `"@storybook/vue3"` and `"@storybook/svelte"`. If you are using Angular, please check out the Angular-specific Storybook executor.
-
-```json
-"build-storybook": {
-    "executor": "@nrwl/storybook:build",
-    "outputs": ["{options.outputPath}"],
-    "options": {
-        "uiFramework": "@storybook/web-components",
-        "outputPath": "dist/storybook/ui",
-        "config": {
-            "configFolder": "libs/ui/.storybook"
-        }
-    },
-    "configurations": {
-        "ci": {
-            "quiet": true
-        }
-    }
-}
-```
-
-{% /tab %}
 {% tab label="Working in docsMode" %}
 
 You can work in docs mode, building a documentation-only site, by setting the `docsMode` option to `true` and using the `@storybook/addon-docs` addon.
@@ -65,13 +43,10 @@ Read more on the [Storybook documentation page for `addon-docs`](https://storybo
 
 ```json
 "storybook": {
-    "executor": "@nrwl/storybook:build",
+    "executor": "@nx/storybook:build",
     "options": {
-        "uiFramework": "@storybook/react",
         "port": 4400,
-        "config": {
-            "configFolder": "libs/ui/.storybook"
-        },
+        "configDir": "libs/ui/.storybook",
         "docsMode": true
     },
     "configurations": {
@@ -99,8 +74,8 @@ This is the default configuration for Angular projects using Storybook. You can 
   "outputs": ["{options.outputDir}"],
   "options": {
     "outputDir": "dist/storybook/ngapp",
-    "configDir": "libs/ui/.storybook",
-    "browserTarget": "ui:build",
+    "configDir": "apps/ngapp/.storybook",
+    "browserTarget": "ngapp:build",
     "compodoc": false
   },
   "configurations": {
@@ -114,7 +89,7 @@ This is the default configuration for Angular projects using Storybook. You can 
 {% /tab %}
 {% tab label="Changing the browserTarget" %}
 
-You can set the [`browserTarget`](/storybook/angular-browser-target) to use `build-storybook` as the builder. This is most useful in the cases where your project does not have a `build` target.
+You can set the `browserTarget` to use `build-storybook` as the builder. This is most useful in the cases where your project does not have a `build` target. Read more about the `browserTarget` in the [Set up Storybook for Angular Projects](/recipes/storybook/overview-angular) recipe.
 
 ```json
 "build-storybook": {
@@ -122,8 +97,8 @@ You can set the [`browserTarget`](/storybook/angular-browser-target) to use `bui
   "outputs": ["{options.outputDir}"],
   "options": {
     "outputDir": "dist/storybook/ngapp",
-    "configDir": "libs/ui/.storybook",
-    "browserTarget": "ui:build-storybook",
+    "configDir": "apps/ngapp/.storybook",
+    "browserTarget": "ngapp:build-storybook",
     "compodoc": false
   },
   "configurations": {
@@ -138,7 +113,7 @@ You can set the [`browserTarget`](/storybook/angular-browser-target) to use `bui
 
 {% tab label="Adding styles" %}
 
-You can add paths to stylesheets to be included in the Storybook build by using the `styles` array. You can also add `stylePreprocessorOptions`, much like you would do in the Angular builder. You can read more in our guide about [styles and preprocessor options for Storybook](/storybook/angular-configuring-styles).
+You can add paths to stylesheets to be included in the Storybook build by using the `styles` array. You can also add `stylePreprocessorOptions`, much like you would do in the Angular builder. You can read more in our guide about [styles and preprocessor options for Storybook](/recipes/storybook/angular-configuring-styles).
 
 ```json
 "build-storybook": {
@@ -146,8 +121,8 @@ You can add paths to stylesheets to be included in the Storybook build by using 
   "outputs": ["{options.outputDir}"],
   "options": {
     "outputDir": "dist/storybook/ngapp",
-    "configDir": "libs/ui/.storybook",
-    "browserTarget": "ui:build-storybook",
+    "configDir": "apps/ngapp/.storybook",
+    "browserTarget": "ngapp:build-storybook",
     "compodoc": false,
     "styles": ["some-styles.css"],
     "stylePreprocessorOptions": {

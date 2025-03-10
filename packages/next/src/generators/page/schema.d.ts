@@ -1,12 +1,11 @@
-import { SupportedStyles } from '@nrwl/react';
+import { SupportedStyles } from '@nx/react';
 
 export interface Schema {
-  name: string;
-  project: string;
+  path: string;
+  name?: string;
   style: SupportedStyles;
-  directory?: string;
   fileName?: string;
   withTests?: boolean;
   js?: boolean;
-  flat?: boolean;
+  skipFormat?: boolean;
 }

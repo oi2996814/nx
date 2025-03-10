@@ -48,7 +48,10 @@ function toPropertyName(s: string): string {
  * Hyphenated to CONSTANT_CASE
  */
 function toConstantName(s: string): string {
-  return s.replace(/([^a-zA-Z0-9])/g, '_').toUpperCase();
+  const normalizedS = s.toUpperCase() === s ? s.toLowerCase() : s;
+  return toFileName(toPropertyName(normalizedS))
+    .replace(/([^a-zA-Z0-9])/g, '_')
+    .toUpperCase();
 }
 
 /**

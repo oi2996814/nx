@@ -1,145 +1,114 @@
 import {
   formatFiles,
+  GeneratorCallback,
   installPackagesTask,
-  moveFilesToNewDirectory,
+  offsetFromRoot,
+  readNxJson,
   Tree,
-} from '@nrwl/devkit';
-import { wrapAngularDevkitSchematic } from '@nrwl/devkit/ngcli-adapter';
-import { convertToNxProjectGenerator } from '@nrwl/workspace/generators';
-import { UnitTestRunner } from '../../utils/test-runners';
+  updateNxJson,
+} from '@nx/devkit';
+import { logShowProjectCommand } from '@nx/devkit/src/utils/log-show-project-command';
+import { initGenerator as jsInitGenerator } from '@nx/js';
+import { assertNotUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 import { angularInitGenerator } from '../init/init';
+import { setupSsr } from '../setup-ssr/setup-ssr';
 import { setupTailwindGenerator } from '../setup-tailwind/setup-tailwind';
+import { ensureAngularDependencies } from '../utils/ensure-angular-dependencies';
 import {
   addE2e,
   addLinting,
   addProxyConfig,
-  addRouterRootConfiguration,
+  addServeStaticTarget,
   addUnitTestRunner,
-  convertToStandaloneApp,
   createFiles,
+  createProject,
   enableStrictTypeChecking,
   normalizeOptions,
   setApplicationStrictDefault,
-  setDefaultProject,
-  updateAppComponentTemplate,
-  updateComponentSpec,
-  updateConfigFiles,
+  setGeneratorDefaults,
   updateEditorTsConfig,
-  updateNxComponentTemplate,
 } from './lib';
 import type { Schema } from './schema';
 
 export async function applicationGenerator(
-  host: Tree,
+  tree: Tree,
   schema: Partial<Schema>
-) {
-  const options = normalizeOptions(host, schema);
+): Promise<GeneratorCallback> {
+  assertNotUsingTsSolutionSetup(tree, 'angular', 'application');
 
-  await angularInitGenerator(host, {
+  const options = await normalizeOptions(tree, schema);
+  const rootOffset = offsetFromRoot(options.appProjectRoot);
+
+  await jsInitGenerator(tree, {
+    ...options,
+    tsConfigName: options.rootProject ? 'tsconfig.json' : 'tsconfig.base.json',
+    js: false,
+    skipFormat: true,
+  });
+  await angularInitGenerator(tree, {
     ...options,
     skipFormat: true,
   });
 
-  const angularAppSchematic = wrapAngularDevkitSchematic(
-    '@schematics/angular',
-    'application'
-  );
-  await angularAppSchematic(host, {
-    name: options.name,
-    inlineStyle: options.inlineStyle,
-    inlineTemplate: options.inlineTemplate,
-    prefix: options.prefix,
-    skipTests: options.skipTests,
-    style: options.style,
-    viewEncapsulation: options.viewEncapsulation,
-    routing: false,
-    skipInstall: true,
-    skipPackageJson: options.skipPackageJson,
-  });
-
-  if (options.ngCliSchematicAppRoot !== options.appProjectRoot) {
-    moveFilesToNewDirectory(
-      host,
-      options.ngCliSchematicAppRoot,
-      options.appProjectRoot
-    );
+  if (!options.skipPackageJson) {
+    ensureAngularDependencies(tree);
   }
 
-  createFiles(host, options);
-  updateConfigFiles(host, options);
-  updateAppComponentTemplate(host, options);
+  createProject(tree, options);
 
-  // Create the NxWelcomeComponent
-  const angularComponentSchematic = wrapAngularDevkitSchematic(
-    '@schematics/angular',
-    'component'
-  );
-  await angularComponentSchematic(host, {
-    name: 'NxWelcome',
-    inlineTemplate: true,
-    inlineStyle: true,
-    prefix: options.prefix,
-    skipTests: true,
-    style: options.style,
-    flat: true,
-    viewEncapsulation: 'None',
-    project: options.name,
-    standalone: options.standalone,
-  });
-  updateNxComponentTemplate(host, options);
+  await createFiles(tree, options, rootOffset);
 
   if (options.addTailwind) {
-    await setupTailwindGenerator(host, {
+    await setupTailwindGenerator(tree, {
       project: options.name,
       skipFormat: true,
       skipPackageJson: options.skipPackageJson,
     });
   }
 
-  if (options.unitTestRunner !== UnitTestRunner.None) {
-    updateComponentSpec(host, options);
-  }
+  await addLinting(tree, options);
+  await addUnitTestRunner(tree, options);
+  const e2ePort = await addE2e(tree, options);
+  addServeStaticTarget(
+    tree,
+    options,
+    options.e2eTestRunner !== 'none' ? e2ePort : options.port
+  );
+  updateEditorTsConfig(tree, options);
+  setGeneratorDefaults(tree, options);
 
-  if (options.routing) {
-    addRouterRootConfiguration(host, options);
-  }
-
-  addLinting(host, options);
-  await addUnitTestRunner(host, options);
-  await addE2e(host, options);
-  updateEditorTsConfig(host, options);
-
-  if (!options.skipDefaultProject) {
-    setDefaultProject(host, options);
+  if (options.rootProject) {
+    const nxJson = readNxJson(tree);
+    nxJson.defaultProject = options.name;
+    updateNxJson(tree, nxJson);
   }
 
   if (options.backendProject) {
-    addProxyConfig(host, options);
+    addProxyConfig(tree, options);
   }
 
   if (options.strict) {
-    enableStrictTypeChecking(host, options);
+    enableStrictTypeChecking(tree, options);
   } else {
-    setApplicationStrictDefault(host, false);
+    setApplicationStrictDefault(tree, false);
   }
 
-  if (options.standaloneConfig) {
-    await convertToNxProjectGenerator(host, {
+  if (options.ssr) {
+    await setupSsr(tree, {
       project: options.name,
-      all: false,
+      standalone: options.standalone,
+      skipPackageJson: options.skipPackageJson,
+      serverRouting: options.serverRouting,
     });
   }
 
-  if (options.standalone) {
-    convertToStandaloneApp(host, options);
-  }
-
   if (!options.skipFormat) {
-    await formatFiles(host);
+    await formatFiles(tree);
   }
 
   return () => {
-    installPackagesTask(host);
+    installPackagesTask(tree);
+    logShowProjectCommand(options.name);
   };
 }
 

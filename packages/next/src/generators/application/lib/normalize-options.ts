@@ -1,40 +1,67 @@
-import { assertValidStyle } from '@nrwl/react';
+import { joinPathFragments, names, readNxJson, Tree } from '@nx/devkit';
 import {
-  getWorkspaceLayout,
-  joinPathFragments,
-  names,
-  Tree,
-} from '@nrwl/devkit';
-import { Linter } from '@nrwl/linter';
-
+  determineProjectNameAndRootOptions,
+  ensureRootProjectName,
+} from '@nx/devkit/src/generators/project-name-and-root-utils';
+import { Linter } from '@nx/eslint';
+import { assertValidStyle } from '@nx/react/src/utils/assertion';
 import { Schema } from '../schema';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
-export interface NormalizedSchema extends Schema {
+export interface NormalizedSchema
+  extends Omit<Schema, 'name' | 'useTsSolution'> {
   projectName: string;
+  projectSimpleName: string;
   appProjectRoot: string;
+  importPath: string;
+  outputPath: string;
   e2eProjectName: string;
   e2eProjectRoot: string;
   parsedTags: string[];
   fileName: string;
   styledModule: null | string;
+  isTsSolutionSetup: boolean;
   js?: boolean;
 }
 
-export function normalizeOptions(
+export async function normalizeOptions(
   host: Tree,
   options: Schema
-): NormalizedSchema {
-  const appDirectory = options.directory
-    ? `${names(options.directory).fileName}/${names(options.name).fileName}`
-    : names(options.name).fileName;
+): Promise<NormalizedSchema> {
+  await ensureRootProjectName(options, 'application');
+  const {
+    projectName,
+    names: projectNames,
+    projectRoot: appProjectRoot,
+    importPath,
+  } = await determineProjectNameAndRootOptions(host, {
+    name: options.name,
+    projectType: 'application',
+    directory: options.directory,
+    rootProject: options.rootProject,
+  });
+  options.rootProject = appProjectRoot === '.';
 
-  const { appsDir } = getWorkspaceLayout(host);
+  const nxJson = readNxJson(host);
+  const addPlugin =
+    process.env.NX_ADD_PLUGINS !== 'false' &&
+    nxJson.useInferencePlugins !== false;
 
-  const appProjectName = appDirectory.replace(new RegExp('/', 'g'), '-');
-  const e2eProjectName = `${appProjectName}-e2e`;
+  options.addPlugin ??= addPlugin;
 
-  const appProjectRoot = joinPathFragments(appsDir, appDirectory);
-  const e2eProjectRoot = joinPathFragments(appsDir, `${appDirectory}-e2e`);
+  const isTsSolutionSetup =
+    options.useTsSolution || isUsingTsSolutionSetup(host);
+  const appProjectName =
+    !isTsSolutionSetup || options.name ? projectName : importPath;
+
+  const e2eProjectName = options.rootProject ? 'e2e' : `${appProjectName}-e2e`;
+  const e2eProjectRoot = options.rootProject ? 'e2e' : `${appProjectRoot}-e2e`;
+
+  const outputPath = joinPathFragments(
+    'dist',
+    appProjectRoot,
+    ...(options.rootProject ? [projectNames.projectFileName] : [])
+  );
 
   const parsedTags = options.tags
     ? options.tags.split(',').map((s) => s.trim())
@@ -42,7 +69,10 @@ export function normalizeOptions(
 
   const fileName = 'index';
 
-  const styledModule = /^(css|scss|less|styl)$/.test(options.style)
+  const appDir = options.appDir ?? true;
+  const src = options.src ?? true;
+
+  const styledModule = /^(css|scss|less|tailwind)$/.test(options.style)
     ? null
     : options.style;
 
@@ -50,17 +80,22 @@ export function normalizeOptions(
 
   return {
     ...options,
-    name: names(options.name).fileName,
-    projectName: appProjectName,
-    linter: options.linter || Linter.EsLint,
-    unitTestRunner: options.unitTestRunner || 'jest',
-    e2eTestRunner: options.e2eTestRunner || 'cypress',
-    style: options.style || 'css',
+    appDir,
+    src,
     appProjectRoot,
-    e2eProjectRoot,
     e2eProjectName,
-    parsedTags,
+    e2eProjectRoot,
+    e2eTestRunner: options.e2eTestRunner || 'playwright',
     fileName,
+    linter: options.linter || Linter.EsLint,
+    outputPath,
+    parsedTags,
+    projectName: appProjectName,
+    projectSimpleName: projectNames.projectSimpleName,
+    style: options.style || 'css',
     styledModule,
+    unitTestRunner: options.unitTestRunner || 'jest',
+    importPath,
+    isTsSolutionSetup,
   };
 }

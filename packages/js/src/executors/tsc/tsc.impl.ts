@@ -1,93 +1,61 @@
-import { ExecutorContext } from '@nrwl/devkit';
+import * as ts from 'typescript';
 import {
-  assetGlobsToFiles,
-  FileInputOutput,
-} from '@nrwl/workspace/src/utilities/assets';
-import { TypeScriptCompilationOptions } from '@nrwl/workspace/src/utilities/typescript/compilation';
-import { join, resolve } from 'path';
-import {
-  CustomTransformers,
-  Program,
-  SourceFile,
-  TransformerFactory,
-} from 'typescript';
+  ExecutorContext,
+  isDaemonEnabled,
+  joinPathFragments,
+  output,
+} from '@nx/devkit';
+import type { TypeScriptCompilationOptions } from '@nx/workspace/src/utilities/typescript/compilation';
+import { CopyAssetsHandler } from '../../utils/assets/copy-assets-handler';
 import { checkDependencies } from '../../utils/check-dependencies';
 import {
   getHelperDependency,
   HelperDependency,
 } from '../../utils/compiler-helper-dependency';
-import { CopyAssetsHandler } from '../../utils/assets/copy-assets-handler';
+import {
+  handleInliningBuild,
+  isInlineGraphEmpty,
+  postProcessInlinedDependencies,
+} from '../../utils/inline';
+import { updatePackageJson } from '../../utils/package-json/update-package-json';
 import { ExecutorOptions, NormalizedExecutorOptions } from '../../utils/schema';
 import { compileTypeScriptFiles } from '../../utils/typescript/compile-typescript-files';
-import { loadTsTransformers } from '../../utils/typescript/load-ts-transformers';
-import { updatePackageJson } from '../../utils/package-json/update-package-json';
 import { watchForSingleFileChanges } from '../../utils/watch-for-single-file-changes';
+import { getCustomTrasformersFactory, normalizeOptions } from './lib';
+import { readTsConfig } from '../../utils/typescript/ts-config';
+import { createEntryPoints } from '../../utils/package-json/create-entry-points';
 
-export function normalizeOptions(
-  options: ExecutorOptions,
-  contextRoot: string,
-  sourceRoot: string,
-  projectRoot: string
-): NormalizedExecutorOptions {
-  const outputPath = join(contextRoot, options.outputPath);
-  const rootDir = options.rootDir
-    ? join(contextRoot, options.rootDir)
-    : projectRoot;
-
-  if (options.watch == null) {
-    options.watch = false;
+export function determineModuleFormatFromTsConfig(
+  absolutePathToTsConfig: string
+): 'cjs' | 'esm' {
+  const tsConfig = readTsConfig(absolutePathToTsConfig);
+  if (
+    tsConfig.options.module === ts.ModuleKind.ES2015 ||
+    tsConfig.options.module === ts.ModuleKind.ES2020 ||
+    tsConfig.options.module === ts.ModuleKind.ES2022 ||
+    tsConfig.options.module === ts.ModuleKind.ESNext
+  ) {
+    return 'esm';
+  } else {
+    return 'cjs';
   }
-
-  const files: FileInputOutput[] = assetGlobsToFiles(
-    options.assets,
-    contextRoot,
-    outputPath
-  );
-
-  return {
-    ...options,
-    root: contextRoot,
-    sourceRoot,
-    projectRoot,
-    files,
-    outputPath,
-    tsConfig: join(contextRoot, options.tsConfig),
-    rootDir,
-    mainOutputPath: resolve(
-      outputPath,
-      options.main.replace(`${projectRoot}/`, '').replace('.ts', '.js')
-    ),
-  };
 }
 
 export function createTypeScriptCompilationOptions(
   normalizedOptions: NormalizedExecutorOptions,
   context: ExecutorContext
 ): TypeScriptCompilationOptions {
-  const { compilerPluginHooks } = loadTsTransformers(
-    normalizedOptions.transformers
-  );
-  const getCustomTransformers = (program: Program): CustomTransformers => ({
-    before: compilerPluginHooks.beforeHooks.map(
-      (hook) => hook(program) as TransformerFactory<SourceFile>
-    ),
-    after: compilerPluginHooks.afterHooks.map(
-      (hook) => hook(program) as TransformerFactory<SourceFile>
-    ),
-    afterDeclarations: compilerPluginHooks.afterDeclarationsHooks.map(
-      (hook) => hook(program) as TransformerFactory<SourceFile>
-    ),
-  });
-
   return {
-    outputPath: normalizedOptions.outputPath,
+    outputPath: joinPathFragments(normalizedOptions.outputPath),
     projectName: context.projectName,
     projectRoot: normalizedOptions.projectRoot,
-    rootDir: normalizedOptions.rootDir,
-    tsConfig: normalizedOptions.tsConfig,
+    rootDir: joinPathFragments(normalizedOptions.rootDir),
+    tsConfig: joinPathFragments(normalizedOptions.tsConfig),
     watch: normalizedOptions.watch,
     deleteOutputPath: normalizedOptions.clean,
-    getCustomTransformers,
+    getCustomTransformers: getCustomTrasformersFactory(
+      normalizedOptions.transformers
+    ),
   };
 }
 
@@ -95,12 +63,13 @@ export async function* tscExecutor(
   _options: ExecutorOptions,
   context: ExecutorContext
 ) {
-  const { sourceRoot, root } = context.workspace.projects[context.projectName];
+  const { sourceRoot, root } =
+    context.projectsConfigurations.projects[context.projectName];
   const options = normalizeOptions(_options, context.root, sourceRoot, root);
 
   const { projectRoot, tmpTsConfig, target, dependencies } = checkDependencies(
     context,
-    _options.tsConfig
+    options.tsConfig
   );
 
   if (tmpTsConfig) {
@@ -125,30 +94,92 @@ export async function* tscExecutor(
     assets: _options.assets,
   });
 
-  if (options.watch) {
-    const disposeWatchAssetChanges =
-      await assetHandler.watchAndProcessOnAssetChange();
-    const disposePackageJsonChanges = await watchForSingleFileChanges(
-      join(context.root, projectRoot),
-      'package.json',
-      () => updatePackageJson(options, context, target, dependencies)
-    );
-    const handleTermination = async () => {
-      await disposeWatchAssetChanges();
-      await disposePackageJsonChanges();
-    };
-    process.on('SIGINT', () => handleTermination());
-    process.on('SIGTERM', () => handleTermination());
+  const tsCompilationOptions = createTypeScriptCompilationOptions(
+    options,
+    context
+  );
+
+  const inlineProjectGraph = handleInliningBuild(
+    context,
+    options,
+    tsCompilationOptions.tsConfig
+  );
+
+  if (!isInlineGraphEmpty(inlineProjectGraph)) {
+    tsCompilationOptions.rootDir = '.';
   }
 
-  return yield* compileTypeScriptFiles(
+  const typescriptCompilation = compileTypeScriptFiles(
     options,
-    createTypeScriptCompilationOptions(options, context),
+    tsCompilationOptions,
     async () => {
       await assetHandler.processAllAssetsOnce();
-      updatePackageJson(options, context, target, dependencies);
+      if (options.generatePackageJson) {
+        updatePackageJson(
+          {
+            ...options,
+            additionalEntryPoints: createEntryPoints(
+              options.additionalEntryPoints,
+              context.root
+            ),
+            format: [determineModuleFormatFromTsConfig(options.tsConfig)],
+          },
+          context,
+          target,
+          dependencies
+        );
+      }
+      postProcessInlinedDependencies(
+        tsCompilationOptions.outputPath,
+        tsCompilationOptions.projectRoot,
+        inlineProjectGraph
+      );
     }
   );
+
+  if (!isDaemonEnabled() && options.watch) {
+    output.warn({
+      title:
+        'Nx Daemon is not enabled. Assets and package.json files will not be updated when files change.',
+    });
+  }
+
+  if (isDaemonEnabled() && options.watch) {
+    const disposeWatchAssetChanges =
+      await assetHandler.watchAndProcessOnAssetChange();
+    let disposePackageJsonChanges: undefined | (() => void);
+    if (options.generatePackageJson) {
+      disposePackageJsonChanges = await watchForSingleFileChanges(
+        context.projectName,
+        options.projectRoot,
+        'package.json',
+        () =>
+          updatePackageJson(
+            {
+              ...options,
+              additionalEntryPoints: createEntryPoints(
+                options.additionalEntryPoints,
+                context.root
+              ),
+              format: [determineModuleFormatFromTsConfig(options.tsConfig)],
+            },
+            context,
+            target,
+            dependencies
+          )
+      );
+    }
+    const handleTermination = async (exitCode: number) => {
+      await typescriptCompilation.close();
+      disposeWatchAssetChanges();
+      disposePackageJsonChanges?.();
+      process.exit(exitCode);
+    };
+    process.on('SIGINT', () => handleTermination(128 + 2));
+    process.on('SIGTERM', () => handleTermination(128 + 15));
+  }
+
+  return yield* typescriptCompilation.iterator;
 }
 
 export default tscExecutor;

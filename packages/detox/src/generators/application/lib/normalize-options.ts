@@ -1,57 +1,58 @@
-import {
-  getWorkspaceLayout,
-  joinPathFragments,
-  names,
-  Tree,
-} from '@nrwl/devkit';
+import { names, readNxJson, readProjectConfiguration, Tree } from '@nx/devkit';
+import { determineProjectNameAndRootOptions } from '@nx/devkit/src/generators/project-name-and-root-utils';
 import { Schema } from '../schema';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
-export interface NormalizedSchema extends Schema {
-  appFileName: string; // the file name of app to be tested
-  appClassName: string; // the class name of app to be tested
-  appDisplayName: string; // the display name of the app to be tested
-  projectName: string; // the name of e2e project
-  projectDirectory: string; // the directory of e2e project
-  projectRoot: string; // the root path of e2e project
+export interface NormalizedSchema extends Omit<Schema, 'e2eName'> {
+  appFileName: string; // the file name of app to be tested in kebab case
+  appClassName: string; // the class name of app to be tested in pascal case
+  appExpoName: string; // the expo name of app to be tested in class case
+  appRoot: string; // the root path of e2e project. e.g. apps/app-directory/app
+  e2eProjectName: string; // the name of e2e project
+  e2eProjectRoot: string; // the root path of e2e project. e.g. apps/e2e-directory/e2e-app
+  importPath: string;
+  isUsingTsSolutionConfig?: boolean;
 }
 
-/**
- * if options.name = 'my-app-e2e' with no options.directory
- * projectName = 'my-app', projectRoot = 'apps/my-app'
- * if options.name = 'my-app' with options.directory = 'my-dir'
- * projectName = 'my-dir-my-app', projectRoot = 'apps/my-dir/my-apps'
- */
-export function normalizeOptions(
+export async function normalizeOptions(
   host: Tree,
   options: Schema
-): NormalizedSchema {
-  const { appsDir } = getWorkspaceLayout(host);
-  const fileName = names(options.name).fileName;
-  const directoryFileName = options.directory
-    ? names(options.directory).fileName
-    : '';
-  const projectName = (
-    directoryFileName ? `${directoryFileName}-${fileName}` : fileName
-  ).replace(new RegExp('/', 'g'), '-');
-  const projectDirectory = directoryFileName
-    ? joinPathFragments(appsDir, directoryFileName)
-    : appsDir;
-  const projectRoot = joinPathFragments(projectDirectory, fileName);
+): Promise<NormalizedSchema> {
+  const {
+    projectName,
+    projectRoot: e2eProjectRoot,
+    importPath,
+  } = await determineProjectNameAndRootOptions(host, {
+    name: options.e2eName,
+    projectType: 'application',
+    directory: options.e2eDirectory,
+  });
+  const nxJson = readNxJson(host);
+  const addPlugin =
+    process.env.NX_ADD_PLUGINS !== 'false' &&
+    nxJson.useInferencePlugins !== false;
+  options.addPlugin ??= addPlugin;
 
   const { fileName: appFileName, className: appClassName } = names(
-    options.project
+    options.appName || options.appProject
   );
+  const { root: appRoot } = readProjectConfiguration(host, options.appProject);
+
+  const isUsingTsSolutionConfig = isUsingTsSolutionSetup(host);
+  const e2eProjectName =
+    !isUsingTsSolutionConfig || options.e2eName ? projectName : importPath;
 
   return {
     ...options,
     appFileName,
     appClassName,
-    appDisplayName: options.displayName
-      ? names(options.displayName).className
-      : appClassName,
-    name: fileName,
-    projectName,
-    projectDirectory,
-    projectRoot,
+    appDisplayName: options.appDisplayName || appClassName,
+    appExpoName: options.appDisplayName?.replace(/\s/g, '') || appClassName,
+    appRoot,
+    e2eProjectName,
+    e2eProjectRoot,
+    importPath,
+    isUsingTsSolutionConfig,
+    js: options.js ?? false,
   };
 }

@@ -4,13 +4,174 @@ import {
   DocumentIcon,
   PlayCircleIcon,
 } from '@heroicons/react/24/outline';
-import { ReactNode } from 'react';
+import { Framework, frameworkIcons } from '@nx/graph/legacy/icons';
+import * as nxDevIcons from '@nx/nx-dev/ui-icons';
+import * as heroIcons from '@heroicons/react/24/outline';
 
-export function Cards({ children }: { children: ReactNode }) {
+import { cx } from '@nx/nx-dev/ui-primitives';
+import { ReactNode } from 'react';
+import Link from 'next/link';
+
+const colsClasses: Record<number, string> = {
+  1: 'grid-cols-1',
+  2: 'grid-cols-2',
+  3: 'grid-cols-3',
+  4: 'grid-cols-4',
+  5: 'grid-cols-5',
+  6: 'grid-cols-6',
+  7: 'grid-cols-7',
+  8: 'grid-cols-8',
+};
+const smColsClasses: Record<number, string> = {
+  1: 'sm:grid-cols-1',
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-3',
+  4: 'sm:grid-cols-4',
+  5: 'sm:grid-cols-5',
+  6: 'sm:grid-cols-6',
+  7: 'sm:grid-cols-7',
+  8: 'sm:grid-cols-8',
+};
+const mdColsClasses: Record<number, string> = {
+  1: 'md:grid-cols-1',
+  2: 'md:grid-cols-2',
+  3: 'md:grid-cols-3',
+  4: 'md:grid-cols-4',
+  5: 'md:grid-cols-5',
+  6: 'md:grid-cols-6',
+  7: 'md:grid-cols-7',
+  8: 'md:grid-cols-8',
+};
+const lgColsClasses: Record<number, string> = {
+  1: 'lg:grid-cols-1',
+  2: 'lg:grid-cols-2',
+  3: 'lg:grid-cols-3',
+  4: 'lg:grid-cols-4',
+  5: 'lg:grid-cols-5',
+  6: 'lg:grid-cols-6',
+  7: 'lg:grid-cols-7',
+  8: 'lg:grid-cols-8',
+};
+
+export function Cards({
+  cols = 2,
+  smCols = cols,
+  mdCols = smCols,
+  lgCols = mdCols,
+  children,
+  moreLink,
+}: {
+  cols: number;
+  smCols: number;
+  mdCols: number;
+  lgCols: number;
+  children: ReactNode;
+  moreLink?: string;
+}): JSX.Element {
+  // <div className="mt-8 grid grid-cols-2 lg:grid-cols-5 md:grid-cols-3 sm:grid-cols-2 gap-4">
   return (
-    <div className="not-prose mt-8 grid grid-cols-1 gap-6 lg:grid-cols-2">
+    <div
+      className={cx(
+        'mt-8 grid gap-4',
+        colsClasses[cols] || '',
+        smColsClasses[smCols] || '',
+        mdColsClasses[mdCols] || '',
+        lgColsClasses[lgCols] || ''
+      )}
+    >
       {children}
+      {moreLink && (
+        <div className="col-span-full mt-2 flex justify-end">
+          <Link
+            className="group flex items-center whitespace-nowrap border-transparent px-4 py-0 text-sm font-semibold no-underline transition-all duration-200 ease-in-out hover:text-slate-900 dark:hover:text-sky-400"
+            href={moreLink}
+            prefetch={false}
+          >
+            Browse more
+            <span
+              className="pl-1 transition-all duration-200 ease-in-out group-hover:translate-x-1"
+              aria-hidden="true"
+            >
+              →
+            </span>
+          </Link>
+        </div>
+      )}
     </div>
+  );
+}
+
+function callIfFunction(fn: any, props: { [key: string]: string } = {}) {
+  if (typeof fn === 'function') {
+    return fn(props);
+  }
+  return fn;
+}
+
+export function LinkCard({
+  title,
+  type,
+  icon,
+  url,
+  appearance = 'default',
+}: {
+  title: string;
+  type: string;
+  icon: string; // Can be either a component name or a direct image URL
+  url: string;
+  appearance?: 'default' | 'small';
+}): JSX.Element {
+  return (
+    <Link
+      key={title}
+      href={url}
+      className="no-prose relative col-span-1 mx-auto flex w-full max-w-md flex-col items-center rounded-md border border-slate-200 bg-slate-50/40 p-4 text-center font-semibold shadow-sm transition focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 hover:bg-slate-100 dark:border-slate-800/40 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+      style={{ textDecorationLine: 'none' }}
+      prefetch={false}
+    >
+      {icon && (
+        <div
+          className={cx(
+            'mb-2 flex h-24 w-24 items-center justify-center rounded-lg',
+            {
+              'h-12 w-12': appearance === 'small',
+            }
+          )}
+        >
+          {icon.startsWith('/') ? (
+            <img
+              src={icon}
+              alt={title}
+              className="h-full w-full object-contain"
+            />
+          ) : (
+            frameworkIcons[icon as Framework]?.image ||
+            callIfFunction(nxDevIcons[icon as keyof typeof nxDevIcons]) ||
+            callIfFunction(
+              (heroIcons[icon as keyof typeof heroIcons] as any)?.render,
+              { className: 'w-full h-full' }
+            )
+          )}
+        </div>
+      )}
+      <div
+        className={cx({ 'pt-4': !!icon }, { 'pt-2': appearance === 'small' })}
+      >
+        {appearance === 'small' && type ? null : (
+          <div className="mb-1 text-xs font-medium uppercase text-slate-600 dark:text-slate-300">
+            {type}
+          </div>
+        )}
+        <h3
+          className={cx(
+            'm-0 text-lg font-semibold text-slate-900 dark:text-white',
+            { 'text-sm font-normal': appearance === 'small' }
+          )}
+        >
+          {title}
+        </h3>
+      </div>
+    </Link>
   );
 }
 
@@ -24,11 +185,11 @@ export function Card({
   description: string;
   type: 'documentation' | 'external' | 'video';
   url: string;
-}) {
+}): JSX.Element {
   const iconMap = {
-    documentation: <DocumentIcon className="mr-3 h-5 w-5" />,
-    external: <ArrowTopRightOnSquareIcon className="mr-3 h-5 w-5" />,
-    video: <PlayCircleIcon className="mr-3 h-5 w-5" />,
+    documentation: <DocumentIcon className="mr-3 h-5 w-5 shrink-0" />,
+    external: <ArrowTopRightOnSquareIcon className="mr-3 h-5 w-5 shrink-0" />,
+    video: <PlayCircleIcon className="mr-3 h-5 w-5 shrink-0" />,
   };
   const youtubeRegex =
     /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/gi.exec(
@@ -37,31 +198,37 @@ export function Card({
   const hasYoutubeId = !!youtubeRegex ? youtubeRegex[1] : '';
 
   return (
-    <div
+    <Link
       key={title}
-      className="group relative flex items-center rounded-md border border-slate-200 bg-slate-50/40 pr-8 text-sm shadow-sm transition focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 hover:bg-slate-50 dark:border-slate-800/40 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+      href={url}
+      title={title}
+      className="group flex flex-col items-stretch rounded-md border border-slate-200 bg-slate-50/40 text-sm no-underline shadow-sm transition focus-within:ring-2 focus-within:ring-blue-500 focus-within:ring-offset-2 hover:bg-slate-50 dark:border-slate-800/40 dark:bg-slate-800/60 dark:hover:bg-slate-800"
+      prefetch={false}
     >
       {!!hasYoutubeId && (
-        <img
-          className="!m-0 aspect-video rounded-md"
-          src={`https://img.youtube.com/vi/${hasYoutubeId}/default.jpg`}
-        />
+        <div className="max-h-24">
+          <img
+            className="!m-0 h-full !w-full rounded-t-md bg-black object-contain"
+            alt="Youtube Link"
+            src={`https://img.youtube.com/vi/${hasYoutubeId}/default.jpg`}
+          />
+        </div>
       )}
-      <div className="flex flex-col p-3 pr-0">
-        <a href={url} title={title} className="flex items-center font-semibold">
+      <div className="relative flex flex-col p-3 pr-8">
+        <span className="flex items-center font-semibold underline">
           <span className="absolute inset-0" aria-hidden="true"></span>
           {!hasYoutubeId ? iconMap[type] : null}
           {title}
-        </a>
+        </span>
         {description ? (
-          <p className="mt-1.5 w-full text-sm">{description}</p>
+          <p className="mt-1.5 w-full text-sm no-underline">{description}</p>
         ) : null}
 
         {/*HOVER ICON*/}
-        <span className="absolute right-2 top-1/2 -translate-y-2.5 -translate-x-2 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
+        <span className="absolute right-2 top-1/2 -translate-x-2 -translate-y-2.5 opacity-0 transition-all group-hover:translate-x-0 group-hover:opacity-100">
           <ArrowRightCircleIcon className="h-5 w-5" />
         </span>
       </div>
-    </div>
+    </Link>
   );
 }

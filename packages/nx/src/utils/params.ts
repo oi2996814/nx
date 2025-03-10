@@ -1,16 +1,15 @@
 import { logger } from './logger';
-import { NxJsonConfiguration } from '../config/nx-json';
-import {
-  TargetConfiguration,
+import type { NxJsonConfiguration } from '../config/nx-json';
+import type {
   ProjectsConfigurations,
+  TargetConfiguration,
 } from '../config/workspace-json-project-json';
-import { output } from './output';
 
 type PropertyDescription = {
   type?: string | string[];
   required?: string[];
   enum?: string[];
-  properties?: any;
+  properties?: Properties;
   oneOf?: PropertyDescription[];
   anyOf?: PropertyDescription[];
   allOf?: PropertyDescription[];
@@ -20,6 +19,7 @@ type PropertyDescription = {
   description?: string;
   format?: string;
   visible?: boolean;
+  hidden?: boolean;
   default?:
     | string
     | number
@@ -30,13 +30,16 @@ type PropertyDescription = {
   $default?:
     | { $source: 'argv'; index: number }
     | { $source: 'projectName' }
-    | { $source: 'unparsed' };
-  additionalProperties?: boolean;
+    | { $source: 'unparsed' }
+    | { $source: 'workingDirectory' };
+  additionalProperties?: boolean | PropertyDescription;
+  const?: any;
   'x-prompt'?:
     | string
     | { message: string; type: string; items?: any[]; multiselect?: boolean };
   'x-deprecated'?: boolean | string;
   'x-dropdown'?: 'projects';
+  'x-priority'?: 'important' | 'internal';
 
   // Numbers Only
   multipleOf?: number;
@@ -49,6 +52,11 @@ type PropertyDescription = {
   pattern?: string;
   minLength?: number;
   maxLength?: number;
+
+  // Objects Only
+  patternProperties?: {
+    [pattern: string]: PropertyDescription;
+  };
 };
 
 type Properties = {
@@ -57,10 +65,15 @@ type Properties = {
 export type Schema = {
   properties: Properties;
   required?: string[];
+  anyOf?: Partial<Schema>[];
+  oneOf?: Partial<Schema>[];
   description?: string;
   definitions?: Properties;
-  additionalProperties?: boolean;
+  additionalProperties?: boolean | PropertyDescription;
   examples?: { command: string; description?: string }[];
+  patternProperties?: {
+    [pattern: string]: PropertyDescription;
+  };
 };
 
 export type Unmatched = {
@@ -72,31 +85,6 @@ export type Options = {
   '--'?: Unmatched[];
   [k: string]: string | number | boolean | string[] | Unmatched[] | undefined;
 };
-
-export async function handleErrors(isVerbose: boolean, fn: Function) {
-  try {
-    return await fn();
-  } catch (err) {
-    err ??= new Error('Unknown error caught');
-    if (err.constructor.name === 'UnsuccessfulWorkflowExecution') {
-      logger.error('The generator workflow failed. See above.');
-    } else {
-      const lines = (err.message ? err.message : err.toString()).split('\n');
-      const bodyLines = lines.slice(1);
-      if (err.stack && !isVerbose) {
-        bodyLines.push('Pass --verbose to see the stacktrace.');
-      }
-      output.error({
-        title: lines[0],
-        bodyLines,
-      });
-      if (err.stack && isVerbose) {
-        logger.info(err.stack);
-      }
-    }
-    return 1;
-  }
-}
 
 function camelCase(input: string): string {
   if (input.indexOf('-') > 1) {
@@ -213,44 +201,119 @@ export function validateOptsAgainstSchema(
   opts: { [k: string]: any },
   schema: Schema
 ) {
-  validateObject(
-    opts,
-    schema.properties || {},
-    schema.required || [],
-    schema.additionalProperties,
-    schema.definitions || {}
-  );
+  validateObject(opts, schema, schema.definitions || {});
 }
 
 export function validateObject(
-  opts: { [k: string]: any },
-  properties: Properties,
-  required: string[],
-  additionalProperties: boolean | undefined,
+  opts: { [p: string]: any },
+  schema: Schema | PropertyDescription,
   definitions: Properties
 ) {
-  required.forEach((p) => {
+  if (schema.anyOf) {
+    const errors: Error[] = [];
+    for (const s of schema.anyOf) {
+      try {
+        validateObject(opts, s, definitions);
+      } catch (e) {
+        errors.push(e);
+      }
+    }
+    if (errors.length === schema.anyOf.length) {
+      throw new Error(
+        `Options did not match schema. Please fix any of the following errors:\n${errors
+          .map((e) => ' - ' + e.message)
+          .join('\n')}`
+      );
+    }
+  }
+  if (schema.oneOf) {
+    const matches: Array<PropertyDescription> = [];
+    const errors: Array<Error> = [];
+    for (const propertyDescription of schema.oneOf) {
+      try {
+        validateObject(opts, propertyDescription, definitions);
+        matches.push(propertyDescription);
+      } catch (error) {
+        errors.push(error);
+      }
+    }
+    // If the options matched none of the oneOf property descriptions
+    if (matches.length === 0) {
+      throw new Error(
+        `Options did not match schema: ${JSON.stringify(
+          opts,
+          null,
+          2
+        )}.\nPlease fix 1 of the following errors:\n${errors
+          .map((e) => ' - ' + e.message)
+          .join('\n')}`
+      );
+    }
+    // If the options matched none of the oneOf property descriptions
+    if (matches.length > 1) {
+      throw new Error(
+        `Options did not match schema: ${JSON.stringify(
+          opts,
+          null,
+          2
+        )}.\nShould only match one of \n${matches
+          .map((m) => ' - ' + JSON.stringify(m))
+          .join('\n')}`
+      );
+    }
+  }
+
+  (schema.required ?? []).forEach((p) => {
     if (opts[p] === undefined) {
       throw new SchemaError(`Required property '${p}' is missing`);
     }
   });
 
-  if (additionalProperties === false) {
+  if (
+    schema.additionalProperties !== undefined &&
+    schema.additionalProperties !== true
+  ) {
     Object.keys(opts).find((p) => {
-      if (Object.keys(properties).indexOf(p) === -1) {
+      if (
+        Object.keys(schema.properties ?? {}).indexOf(p) === -1 &&
+        (!schema.patternProperties ||
+          !Object.keys(schema.patternProperties).some((pattern) =>
+            new RegExp(pattern).test(p)
+          ))
+      ) {
         if (p === '_') {
           throw new SchemaError(
             `Schema does not support positional arguments. Argument '${opts[p]}' found`
           );
-        } else {
+        } else if (schema.additionalProperties === false) {
           throw new SchemaError(`'${p}' is not found in schema`);
+        } else if (typeof schema.additionalProperties === 'object') {
+          validateProperty(
+            p,
+            opts[p],
+            schema.additionalProperties,
+            definitions
+          );
         }
       }
     });
   }
 
   Object.keys(opts).forEach((p) => {
-    validateProperty(p, opts[p], properties[p], definitions);
+    validateProperty(p, opts[p], (schema.properties ?? {})[p], definitions);
+
+    if (schema.patternProperties) {
+      Object.keys(schema.patternProperties).forEach((pattern) => {
+        if (new RegExp(pattern).test(p)) {
+          validateProperty(
+            p,
+            opts[p],
+            schema.patternProperties[pattern],
+            definitions
+          );
+        }
+      });
+    }
   });
 }
 
@@ -302,7 +365,7 @@ function validateProperty(
 
   if (schema.allOf) {
     if (!Array.isArray(schema.allOf))
-      throw new Error(`Invalid schema file. anyOf must be an array.`);
+      throw new Error(`Invalid schema file. allOf must be an array.`);
 
     if (
       !schema.allOf.every((r) => {
@@ -322,6 +385,12 @@ function validateProperty(
 
   const isPrimitive = typeof value !== 'object';
   if (isPrimitive) {
+    if (schema.const !== undefined && value !== schema.const) {
+      throw new SchemaError(
+        `Property '${propName}' does not match the schema. '${value}' should be '${schema.const}'.`
+      );
+    }
+
     if (Array.isArray(schema.type)) {
       const passes = schema.type.some((t) => {
         try {
@@ -423,13 +492,7 @@ function validateProperty(
     );
   } else {
     if (schema.type !== 'object') throwInvalidSchema(propName, schema);
-    validateObject(
-      value,
-      schema.properties || {},
-      schema.required || [],
-      schema.additionalProperties,
-      definitions
-    );
+    validateObject(value, schema, definitions);
   }
 }
 
@@ -527,7 +590,7 @@ export function applyVerbosity(
   isVerbose: boolean
 ) {
   if (
-    (schema.additionalProperties || 'verbose' in schema.properties) &&
+    (schema.additionalProperties === true || 'verbose' in schema.properties) &&
     isVerbose
   ) {
     options['verbose'] = true;
@@ -571,17 +634,19 @@ export async function combineOptionsForGenerator(
   commandLineOpts: Options,
   collectionName: string,
   generatorName: string,
-  wc: (ProjectsConfigurations & NxJsonConfiguration) | null,
+  projectsConfigurations: ProjectsConfigurations,
+  nxJsonConfiguration: NxJsonConfiguration,
   schema: Schema,
   isInteractive: boolean,
   defaultProjectName: string | null,
   relativeCwd: string | null,
   isVerbose = false
 ) {
-  const generatorDefaults = wc
+  const generatorDefaults = projectsConfigurations
     ? getGeneratorDefaults(
         defaultProjectName,
-        wc,
+        projectsConfigurations,
+        nxJsonConfiguration,
         collectionName,
         generatorName
       )
@@ -591,6 +656,8 @@ export async function combineOptionsForGenerator(
     schema,
     false
   );
+
+  warnDeprecations(combined, schema);
   convertSmartDefaultsIntoNamedParams(
     combined,
     schema,
@@ -599,12 +666,10 @@ export async function combineOptionsForGenerator(
   );
 
   if (isInteractive && isTTY()) {
-    combined = await promptForValues(combined, schema, wc);
+    combined = await promptForValues(combined, schema, projectsConfigurations);
   }
 
-  warnDeprecations(combined, schema);
   setDefaults(combined, schema);
-
   validateOptsAgainstSchema(combined, schema);
   applyVerbosity(combined, schema, isVerbose);
   return combined;
@@ -659,6 +724,13 @@ export function convertSmartDefaultsIntoNamedParams(
       relativeCwd
     ) {
       opts[k] = relativeCwd.replace(/\\/g, '/');
+    } else if (
+      opts[k] === undefined &&
+      v.$default !== undefined &&
+      v.$default.$source === 'workingDirectory' &&
+      relativeCwd
+    ) {
+      opts[k] = relativeCwd.replace(/\\/g, '/');
     }
   });
   const leftOverPositionalArgs = [];
@@ -677,27 +749,31 @@ export function convertSmartDefaultsIntoNamedParams(
 
 function getGeneratorDefaults(
   projectName: string | null,
-  wc: (ProjectsConfigurations & NxJsonConfiguration) | null,
+  projectsConfigurations: ProjectsConfigurations,
+  nxJsonConfiguration: NxJsonConfiguration,
   collectionName: string,
   generatorName: string
 ) {
   let defaults = {};
-  if (wc?.generators) {
-    if (wc.generators[collectionName]?.[generatorName]) {
+  if (nxJsonConfiguration?.generators) {
+    if (nxJsonConfiguration.generators[collectionName]?.[generatorName]) {
       defaults = {
         ...defaults,
-        ...wc.generators[collectionName][generatorName],
+        ...nxJsonConfiguration.generators[collectionName][generatorName],
       };
     }
-    if (wc.generators[`${collectionName}:${generatorName}`]) {
+    if (nxJsonConfiguration.generators[`${collectionName}:${generatorName}`]) {
       defaults = {
         ...defaults,
-        ...wc.generators[`${collectionName}:${generatorName}`],
+        ...nxJsonConfiguration.generators[`${collectionName}:${generatorName}`],
       };
     }
   }
-  if (projectName && wc?.projects[projectName]?.generators) {
-    const g = wc.projects[projectName].generators;
+  if (
+    projectName &&
+    projectsConfigurations?.projects[projectName]?.generators
+  ) {
+    const g = projectsConfigurations.projects[projectName].generators;
     if (g[collectionName] && g[collectionName][generatorName]) {
       defaults = { ...defaults, ...g[collectionName][generatorName] };
     }
@@ -711,18 +787,19 @@ function getGeneratorDefaults(
   return defaults;
 }
 
-interface Prompt {
+type Prompt = ConstructorParameters<typeof import('enquirer').Prompt>[0] & {
   name: string;
   type: 'input' | 'autocomplete' | 'multiselect' | 'confirm' | 'numeral';
   message: string;
   initial?: any;
+  limit?: number;
   choices?: (string | { name: string; message: string })[];
-}
+};
 
 export function getPromptsForSchema(
   opts: Options,
   schema: Schema,
-  wc: (ProjectsConfigurations & NxJsonConfiguration) | null
+  projectsConfigurations: ProjectsConfigurations
 ): Prompt[] {
   const prompts: Prompt[] = [];
   Object.entries(schema.properties).forEach(([k, v]) => {
@@ -738,41 +815,66 @@ export function getPromptsForSchema(
       // Normalize x-prompt
       if (typeof v['x-prompt'] === 'string') {
         const message = v['x-prompt'];
-        v['x-prompt'] = {
-          type: v.type === 'boolean' ? 'confirm' : 'input',
-          message,
-        };
+        if (v.type === 'boolean') {
+          v['x-prompt'] = {
+            type: 'confirm',
+            message,
+          };
+        } else if (v.type === 'array' && v.items?.enum) {
+          v['x-prompt'] = {
+            type: 'multiselect',
+            items: v.items.enum,
+            message,
+          };
+        } else {
+          v['x-prompt'] = {
+            type: 'input',
+            message,
+          };
+        }
       }
 
       question.message = v['x-prompt'].message;
+      question.validate = (s) => {
+        try {
+          validateProperty(k, s, v, schema.definitions || {});
+          return true;
+        } catch (e) {
+          return e.message;
+        }
+      };
+
+      // Limit the number of choices displayed so that the prompt fits on the screen
+      const limitForChoicesDisplayed =
+        process.stdout.rows - question.message.split('\n').length;
 
       if (v.type === 'string' && v.enum && Array.isArray(v.enum)) {
         question.type = 'autocomplete';
         question.choices = [...v.enum];
+        question.limit = limitForChoicesDisplayed;
       } else if (
         v.type === 'string' &&
         (v.$default?.$source === 'projectName' ||
           k === 'project' ||
           k === 'projectName' ||
           v['x-dropdown'] === 'projects') &&
-        wc
+        projectsConfigurations
       ) {
         question.type = 'autocomplete';
-        question.choices = Object.keys(wc.projects);
+        question.choices = Object.keys(projectsConfigurations.projects);
+        question.limit = limitForChoicesDisplayed;
       } else if (v.type === 'number' || v['x-prompt'].type == 'number') {
-        question.message = v['x-prompt'].message;
         question.type = 'numeral';
       } else if (
         v['x-prompt'].type == 'confirmation' ||
         v['x-prompt'].type == 'confirm'
       ) {
-        question.message = v['x-prompt'].message;
         question.type = 'confirm';
       } else if (v['x-prompt'].items) {
-        question.message = v['x-prompt'].message;
-        question.type = v['x-prompt'].multiselect
-          ? 'multiselect'
-          : 'autocomplete';
+        question.type =
+          v['x-prompt'].multiselect || v.type === 'array'
+            ? 'multiselect'
+            : 'autocomplete';
         question.choices =
           v['x-prompt'].items &&
           v['x-prompt'].items.map((item) => {
@@ -785,9 +887,11 @@ export function getPromptsForSchema(
               };
             }
           });
+        question.limit = limitForChoicesDisplayed;
+      } else if (v.type === 'boolean') {
+        question.type = 'confirm';
       } else {
-        question.message = v['x-prompt'].message;
-        question.type = v.type === 'boolean' ? 'confirm' : 'input';
+        question.type = 'input';
       }
       prompts.push(question);
     }
@@ -799,12 +903,12 @@ export function getPromptsForSchema(
 async function promptForValues(
   opts: Options,
   schema: Schema,
-  wc: (ProjectsConfigurations & NxJsonConfiguration) | null
+  projectsConfigurations: ProjectsConfigurations
 ) {
   return await (
     await import('enquirer')
   )
-    .prompt(getPromptsForSchema(opts, schema, wc))
+    .prompt(getPromptsForSchema(opts, schema, projectsConfigurations))
     .then((values) => ({ ...opts, ...values }))
     .catch((e) => {
       console.error(e);

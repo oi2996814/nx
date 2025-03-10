@@ -1,8 +1,9 @@
-import { readTsConfig } from '@nrwl/workspace/src/utilities/typescript';
 import * as chalk from 'chalk';
 import * as path from 'path';
 import type { BuilderProgram, Diagnostic, Program } from 'typescript';
-import { codeFrameColumns } from '../code-frames/code-frames';
+import { codeFrameColumns } from 'nx/src/utils/code-frames';
+import { highlight } from '../code-frames/highlight';
+import { readTsConfig } from '../../utils/typescript/ts-config';
 
 export interface TypeCheckResult {
   warnings?: string[];
@@ -20,6 +21,8 @@ interface BaseTypeCheckOptions {
   cacheDir?: string;
   incremental?: boolean;
   rootDir?: string;
+  projectRoot?: string;
+  ignoreDiagnostics?: boolean;
 }
 
 type Mode = NoEmitMode | EmitDeclarationOnlyMode;
@@ -64,7 +67,9 @@ export async function runTypeCheckWatch(
 
   const watchProgram = ts.createWatchProgram(host);
   const program = watchProgram.getProgram().getProgram();
-  const diagnostics = ts.getPreEmitDiagnostics(program);
+  const diagnostics = options.ignoreDiagnostics
+    ? []
+    : ts.getPreEmitDiagnostics(program);
 
   return {
     close: watchProgram.close.bind(watchProgram),
@@ -101,9 +106,9 @@ export async function runTypeCheck(
 
   const result = program.emit();
 
-  const allDiagnostics = ts
-    .getPreEmitDiagnostics(program as Program)
-    .concat(result.diagnostics);
+  const allDiagnostics = options.ignoreDiagnostics
+    ? []
+    : ts.getPreEmitDiagnostics(program as Program).concat(result.diagnostics);
 
   return getTypeCheckResult(
     ts,
@@ -117,16 +122,25 @@ export async function runTypeCheck(
 
 async function setupTypeScript(options: TypeCheckOptions) {
   const ts = await import('typescript');
-  const { workspaceRoot, tsConfigPath, cacheDir, incremental, rootDir } =
+  const { workspaceRoot, tsConfigPath, cacheDir, incremental, projectRoot } =
     options;
   const config = readTsConfig(tsConfigPath);
   if (config.errors.length) {
-    throw new Error(`Invalid config file: ${config.errors}`);
+    const errorMessages = config.errors.map((e) => e.messageText).join('\n');
+    throw new Error(`Invalid config file due to following: ${errorMessages}`);
   }
 
   const emitOptions =
     options.mode === 'emitDeclarationOnly'
-      ? { emitDeclarationOnly: true, declaration: true, outDir: options.outDir }
+      ? {
+          emitDeclarationOnly: true,
+          declaration: true,
+          outDir: options.outDir,
+          declarationDir:
+            options.projectRoot && options.outDir.indexOf(projectRoot)
+              ? options.outDir.replace(projectRoot, '')
+              : undefined,
+        }
       : { noEmit: true };
 
   const compilerOptions = {
@@ -134,7 +148,7 @@ async function setupTypeScript(options: TypeCheckOptions) {
     skipLibCheck: true,
     ...emitOptions,
     incremental,
-    rootDir: rootDir || config.options.rootDir,
+    rootDir: options.rootDir || config.options.rootDir,
   };
 
   return { ts, workspaceRoot, cacheDir, config, compilerOptions };
@@ -208,13 +222,16 @@ export function getFormattedDiagnostic(
     message =
       `${chalk.underline.blue(`${fileName}:${line}:${column}`)} - ` + message;
 
+    const code = diagnostic.file.getFullText(diagnostic.file.getSourceFile());
+
     message +=
       '\n' +
       codeFrameColumns(
-        diagnostic.file.getFullText(diagnostic.file.getSourceFile()),
+        code,
         {
           start: { line: line, column },
-        }
+        },
+        { highlight }
       );
   }
 

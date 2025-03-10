@@ -1,32 +1,15 @@
-import {
-  readWorkspaceConfiguration,
-  Tree,
-  updateWorkspaceConfiguration,
-} from '@nrwl/devkit';
+import { readNxJson, Tree, updateNxJson } from '@nx/devkit';
 
 import { NormalizedSchema } from './normalize-options';
 
 export function setDefaults(host: Tree, options: NormalizedSchema) {
-  const workspace = readWorkspaceConfiguration(host);
+  const nxJson = readNxJson(host);
 
-  if (!workspace.defaultProject) {
-    workspace.defaultProject = options.projectName;
-  }
+  nxJson.generators ??= {};
+  nxJson.generators['@nx/next'] ??= {};
+  nxJson.generators['@nx/next'].application ??= {};
+  nxJson.generators['@nx/next'].application.style ??= options.style;
+  nxJson.generators['@nx/next'].application.linter ??= options.linter;
 
-  workspace.generators = workspace.generators || {};
-  workspace.generators['@nrwl/next'] = workspace.generators['@nrwl/next'] || {};
-  const prev = workspace.generators['@nrwl/next'];
-
-  workspace.generators = {
-    ...workspace.generators,
-    '@nrwl/next': {
-      ...prev,
-      application: {
-        style: options.style,
-        linter: options.linter,
-        ...prev.application,
-      },
-    },
-  };
-  updateWorkspaceConfiguration(host, workspace);
+  updateNxJson(host, nxJson);
 }

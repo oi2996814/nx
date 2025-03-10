@@ -1,11 +1,11 @@
 export interface Schema {
-  name: string;
-  project: string;
+  path: string;
+  name?: string;
   skipTests?: boolean;
-  directory?: string;
   export?: boolean;
-  pascalCaseFiles?: boolean;
-  pascalCaseDirectory?: boolean;
-  flat?: boolean;
+
+  /**
+   * @deprecated Provide the full file path including the file extension in the `path` option. This option will be removed in Nx v21.
+   */
   js?: boolean;
 }

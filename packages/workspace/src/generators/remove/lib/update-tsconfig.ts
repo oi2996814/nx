@@ -1,38 +1,60 @@
 import {
-  getWorkspaceLayout,
-  ProjectConfiguration,
+  createProjectGraphAsync,
+  normalizePath,
+  ProjectGraph,
+  readProjectsConfigurationFromProjectGraph,
   Tree,
   updateJson,
-} from '@nrwl/devkit';
-import { getImportPath } from 'nx/src/utils/path';
-import { getRootTsConfigPathInTree } from '../../../utilities/typescript';
+} from '@nx/devkit';
+import { getRootTsConfigPathInTree } from '../../../utilities/ts-config';
 import { Schema } from '../schema';
+import {
+  createProjectRootMappings,
+  findProjectForPath,
+} from 'nx/src/project-graph/utils/find-project-for-path';
+import { isUsingTsSolutionSetup } from '../../../utilities/typescript/ts-solution-setup';
+import { relative } from 'path';
 
 /**
  * Updates the tsconfig paths to remove the project.
  *
  * @param schema The options provided to the schematic
  */
-export function updateTsconfig(
-  tree: Tree,
-  schema: Schema,
-  project: ProjectConfiguration
-) {
-  const { appsDir, libsDir, npmScope } = getWorkspaceLayout(tree);
+export async function updateTsconfig(tree: Tree, schema: Schema) {
+  const isUsingTsSolution = isUsingTsSolutionSetup(tree);
+  const tsConfigPath = isUsingTsSolution
+    ? 'tsconfig.json'
+    : getRootTsConfigPathInTree(tree);
 
-  const tsConfigPath = getRootTsConfigPathInTree(tree);
-  const defaultImportPath = getImportPath(
-    npmScope,
-    project.root
-      .slice(
-        project.projectType === 'application' ? appsDir.length : libsDir.length
-      )
-      .replace(/^\/|\\/, '')
-  );
-  const importPath = schema.importPath || defaultImportPath;
   if (tree.exists(tsConfigPath)) {
+    const graph: ProjectGraph = await createProjectGraphAsync();
+    const projectMapping = createProjectRootMappings(graph.nodes);
     updateJson(tree, tsConfigPath, (json) => {
-      delete json.compilerOptions.paths[importPath];
+      if (isUsingTsSolution) {
+        const projectConfigs = readProjectsConfigurationFromProjectGraph(graph);
+        const project = projectConfigs.projects[schema.projectName];
+        if (!project) {
+          throw new Error(
+            `Could not find project '${schema.project}'. Please choose a project that exists in the Nx Workspace.`
+          );
+        }
+        json.references = json.references.filter(
+          (ref) => relative(ref.path, project.root) !== ''
+        );
+      } else {
+        for (const importPath in json.compilerOptions.paths) {
+          for (const path of json.compilerOptions.paths[importPath]) {
+            const project = findProjectForPath(
+              normalizePath(path),
+              projectMapping
+            );
+            if (project === schema.projectName) {
+              delete json.compilerOptions.paths[importPath];
+              break;
+            }
+          }
+        }
+      }
       return json;
     });
   }

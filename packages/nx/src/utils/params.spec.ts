@@ -32,7 +32,7 @@ describe('params', () => {
     it('should use target options', () => {
       const commandLineOpts = {};
       const target: TargetConfiguration = {
-        executor: '@nrwl/do:stuff',
+        executor: '@nx/do:stuff',
         options: {
           overriddenOpt: 'target value',
         },
@@ -58,7 +58,7 @@ describe('params', () => {
     it('should combine target, configuration', () => {
       const commandLineOpts = {};
       const target: TargetConfiguration = {
-        executor: '@nrwl/do:stuff',
+        executor: '@nx/do:stuff',
         options: {
           overriddenOpt: 'target value',
         },
@@ -88,7 +88,7 @@ describe('params', () => {
         overriddenOpt: 'command value',
       };
       const target: TargetConfiguration = {
-        executor: '@nrwl/do:stuff',
+        executor: '@nx/do:stuff',
         options: {
           overriddenOpt: 'target value',
         },
@@ -118,7 +118,7 @@ describe('params', () => {
         overriddenOpt: 'command value',
       };
       const target: TargetConfiguration = {
-        executor: '@nrwl/do:stuff',
+        executor: '@nx/do:stuff',
         options: {
           overriddenOptAlias: 'target value',
         },
@@ -148,7 +148,7 @@ describe('params', () => {
         overriddenOptAlias: 'command value',
       };
       const target: TargetConfiguration = {
-        executor: '@nrwl/do:stuff',
+        executor: '@nx/do:stuff',
         options: {
           overriddenOpt: 'target value',
         },
@@ -176,7 +176,7 @@ describe('params', () => {
     it('should handle targets without options', () => {
       const commandLineOpts = {};
       const target: TargetConfiguration = {
-        executor: '@nrwl/do:stuff',
+        executor: '@nx/do:stuff',
       };
 
       const options = combineOptionsForExecutor(
@@ -710,6 +710,28 @@ describe('params', () => {
       expect(params).toEqual({ a: './somepath' });
     });
 
+    it('should use relativeCwd to set workingDirectory', () => {
+      const params = {};
+      convertSmartDefaultsIntoNamedParams(
+        params,
+        {
+          properties: {
+            a: {
+              type: 'string',
+              $default: {
+                $source: 'workingDirectory',
+              },
+              visible: false,
+            },
+          },
+        },
+        null,
+        './somepath'
+      );
+
+      expect(params).toEqual({ a: './somepath' });
+    });
+
     it('should set unparsed overrides', () => {
       const params = { __overrides_unparsed__: ['one'] };
       convertSmartDefaultsIntoNamedParams(
@@ -776,6 +798,148 @@ describe('params', () => {
       ).toThrow("Required property 'a' is missing");
     });
 
+    it('should throw if none of the oneOf conditions are met', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          {},
+
+          {
+            properties: {
+              a: {
+                type: 'boolean',
+              },
+
+              b: {
+                type: 'boolean',
+              },
+            },
+
+            oneOf: [
+              {
+                required: ['a'],
+              },
+
+              {
+                required: ['b'],
+              },
+            ],
+          }
+        )
+      ).toThrowErrorMatchingInlineSnapshot(`
+        "Options did not match schema: {}.
+        Please fix 1 of the following errors:
+         - Required property 'a' is missing
+         - Required property 'b' is missing"
+      `);
+    });
+
+    it('should throw if more than one of the oneOf conditions are met', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          {
+            a: true,
+            b: false,
+          },
+
+          {
+            properties: {
+              a: {
+                type: 'boolean',
+              },
+
+              b: {
+                type: 'boolean',
+              },
+            },
+
+            oneOf: [
+              {
+                required: ['a'],
+              },
+
+              {
+                required: ['b'],
+              },
+            ],
+          }
+        )
+      ).toThrowErrorMatchingInlineSnapshot(`
+        "Options did not match schema: {
+          "a": true,
+          "b": false
+        }.
+        Should only match one of 
+         - {"required":["a"]}
+         - {"required":["b"]}"
+      `);
+    });
+
+    it('should throw if none of the anyOf conditions are met', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          {},
+
+          {
+            properties: {
+              a: {
+                type: 'boolean',
+              },
+
+              b: {
+                type: 'boolean',
+              },
+            },
+
+            anyOf: [
+              {
+                required: ['a'],
+              },
+
+              {
+                required: ['b'],
+              },
+            ],
+          }
+        )
+      ).toThrowErrorMatchingInlineSnapshot(`
+        "Options did not match schema. Please fix any of the following errors:
+         - Required property 'a' is missing
+         - Required property 'b' is missing"
+      `);
+    });
+
+    it('should not throw if one of the anyOf conditions is met', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          {
+            a: true,
+          },
+
+          {
+            properties: {
+              a: {
+                type: 'boolean',
+              },
+
+              b: {
+                type: 'boolean',
+              },
+            },
+
+            anyOf: [
+              {
+                required: ['a'],
+              },
+
+              {
+                required: ['b'],
+              },
+            ],
+          }
+        )
+      ).not.toThrow();
+    });
+
     it('should throw if found an unknown property', () => {
       expect(() =>
         validateOptsAgainstSchema(
@@ -793,6 +957,82 @@ describe('params', () => {
           }
         )
       ).toThrow("'b' is not found in schema");
+    });
+
+    it('should throw if property name matching pattern is not valid', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          { a: true, b: false },
+          {
+            properties: {
+              a: { type: 'boolean' },
+            },
+            patternProperties: {
+              '^b$': { type: 'number' },
+            },
+            additionalProperties: false,
+          }
+        )
+      ).toThrow(
+        "Property 'b' does not match the schema. 'false' should be a 'number'."
+      );
+    });
+
+    it('should handle properties matching patternProperties schema', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          { a: true, b: false },
+          {
+            properties: {
+              a: { type: 'boolean' },
+            },
+            patternProperties: {
+              '^b$': { type: 'boolean' },
+            },
+            additionalProperties: false,
+          }
+        )
+      ).not.toThrow();
+    });
+
+    it('should throw if additional property does not match schema', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          { a: true, b: 'b', c: 'c' },
+          {
+            properties: {
+              a: { type: 'boolean' },
+            },
+            patternProperties: {
+              '^b$': { type: 'string' },
+            },
+            additionalProperties: {
+              type: 'number',
+            },
+          }
+        )
+      ).toThrow(
+        "Property 'c' does not match the schema. 'c' should be a 'number'."
+      );
+    });
+
+    it('should handle additional properties when they match the additionalProperties schema', () => {
+      expect(() =>
+        validateOptsAgainstSchema(
+          { a: true, b: 'b', c: 1, d: 2 },
+          {
+            properties: {
+              a: { type: 'boolean' },
+            },
+            patternProperties: {
+              '^b$': { type: 'string' },
+            },
+            additionalProperties: {
+              type: 'number',
+            },
+          }
+        )
+      ).not.toThrow();
     });
 
     it('should throw if found unsupported positional property', () => {
@@ -847,6 +1087,27 @@ describe('params', () => {
             }
           )
         ).not.toThrow();
+      });
+
+      it('should handle const value', () => {
+        const schema = {
+          properties: {
+            a: {
+              const: 3,
+            },
+          },
+        };
+        expect(() => validateOptsAgainstSchema({ a: 3 }, schema)).not.toThrow();
+        expect(() =>
+          validateOptsAgainstSchema({ a: true }, schema)
+        ).toThrowErrorMatchingInlineSnapshot(
+          `"Property 'a' does not match the schema. 'true' should be '3'."`
+        );
+        expect(() =>
+          validateOptsAgainstSchema({ a: 123 }, schema)
+        ).toThrowErrorMatchingInlineSnapshot(
+          `"Property 'a' does not match the schema. '123' should be '3'."`
+        );
       });
 
       describe('array', () => {
@@ -1400,6 +1661,7 @@ describe('params', () => {
               'x-prompt': 'What is your name?',
             },
           },
+          required: ['name'],
         },
         {
           version: 2,
@@ -1408,7 +1670,12 @@ describe('params', () => {
       );
 
       expect(prompts).toEqual([
-        { type: 'input', name: 'name', message: 'What is your name?' },
+        {
+          type: 'input',
+          name: 'name',
+          message: 'What is your name?',
+          validate: expect.any(Function),
+        },
       ]);
     });
 
@@ -1430,7 +1697,12 @@ describe('params', () => {
       );
 
       expect(prompts).toEqual([
-        { type: 'confirm', name: 'isAwesome', message: 'Is this awesome?' },
+        {
+          type: 'confirm',
+          name: 'isAwesome',
+          message: 'Is this awesome?',
+          validate: expect.any(Function),
+        },
       ]);
     });
 
@@ -1456,11 +1728,12 @@ describe('params', () => {
           type: 'numeral',
           name: 'age',
           message: 'How old are you?',
+          validate: expect.any(Function),
         },
       ]);
     });
 
-    it('should use an multiselect prompt for x-prompts with items', () => {
+    it('should use a multiselect prompt for x-prompts with items', () => {
       const prompts = getPromptsForSchema(
         {},
         {
@@ -1488,11 +1761,54 @@ describe('params', () => {
           name: 'pets',
           message: 'What kind of pets do you have?',
           choices: ['Cat', 'Dog', 'Fish'],
+          limit: expect.any(Number),
+          validate: expect.any(Function),
         },
       ]);
     });
 
-    it('should use an multiselect prompt for x-prompts with items', () => {
+    it('should use a multiselect prompt for array properties', () => {
+      const prompts = getPromptsForSchema(
+        {},
+        {
+          properties: {
+            pets: {
+              type: 'array',
+              'x-prompt': {
+                type: 'list',
+                message: 'What kind of pets do you have?',
+                items: [
+                  { label: 'Cat', value: 'cat' },
+                  { label: 'Dog', value: 'dog' },
+                  { label: 'Fish', value: 'fish' },
+                ],
+              },
+            },
+          },
+        },
+        {
+          version: 2,
+          projects: {},
+        }
+      );
+
+      expect(prompts).toEqual([
+        {
+          type: 'multiselect',
+          name: 'pets',
+          message: 'What kind of pets do you have?',
+          choices: [
+            { message: 'Cat', name: 'cat' },
+            { message: 'Dog', name: 'dog' },
+            { message: 'Fish', name: 'fish' },
+          ],
+          limit: expect.any(Number),
+          validate: expect.any(Function),
+        },
+      ]);
+    });
+
+    it('should use a multiselect prompt for x-prompts with items', () => {
       const prompts = getPromptsForSchema(
         {},
         {
@@ -1528,6 +1844,40 @@ describe('params', () => {
             { message: 'Dog', name: 'dog' },
             { message: 'Fish', name: 'fish' },
           ],
+          limit: expect.any(Number),
+          validate: expect.any(Function),
+        },
+      ]);
+    });
+
+    it('should use a multiselect if type is array and x-prompt uses shorthand', () => {
+      const prompts = getPromptsForSchema(
+        {},
+        {
+          properties: {
+            pets: {
+              type: 'array',
+              'x-prompt': 'What kind of pets do you have?',
+              items: {
+                enum: ['cat', 'dog', 'fish'],
+              },
+            },
+          },
+        },
+        {
+          version: 2,
+          projects: {},
+        }
+      );
+
+      expect(prompts).toEqual([
+        {
+          message: 'What kind of pets do you have?',
+          name: 'pets',
+          type: 'multiselect',
+          choices: ['cat', 'dog', 'fish'],
+          limit: expect.any(Number),
+          validate: expect.any(Function),
         },
       ]);
     });
@@ -1559,6 +1909,8 @@ describe('params', () => {
             name: 'project',
             message: 'Which project?',
             choices: ['projA', 'projB'],
+            limit: expect.any(Number),
+            validate: expect.any(Function),
           },
         ]);
       });
@@ -1589,6 +1941,8 @@ describe('params', () => {
             name: 'projectName',
             message: 'Which project?',
             choices: ['projA', 'projB'],
+            limit: expect.any(Number),
+            validate: expect.any(Function),
           },
         ]);
       });
@@ -1620,6 +1974,8 @@ describe('params', () => {
             name: 'projectName',
             message: 'Which project?',
             choices: ['projA', 'projB'],
+            limit: expect.any(Number),
+            validate: expect.any(Function),
           },
         ]);
       });
@@ -1653,6 +2009,8 @@ describe('params', () => {
             name: 'yourProject',
             message: 'Which project?',
             choices: ['projA', 'projB'],
+            limit: expect.any(Number),
+            validate: expect.any(Function),
           },
         ]);
       });
@@ -1682,6 +2040,8 @@ describe('params', () => {
           name: 'name',
           message: 'What is your name?',
           choices: ['Bob', 'Joe', 'Jeff'],
+          limit: expect.any(Number),
+          validate: expect.any(Function),
         },
       ]);
     });
@@ -1712,6 +2072,8 @@ describe('params', () => {
           message: 'What is your name?',
           choices: ['Bob', 'Joe', 'Jeff'],
           initial: 'Joe',
+          limit: expect.any(Number),
+          validate: expect.any(Function),
         },
       ]);
     });
@@ -1736,7 +2098,12 @@ describe('params', () => {
       );
 
       expect(prompts).toEqual([
-        { type: 'input', name: 'name', message: 'What is your name?' },
+        {
+          type: 'input',
+          name: 'name',
+          message: 'What is your name?',
+          validate: expect.any(Function),
+        },
       ]);
     });
   });

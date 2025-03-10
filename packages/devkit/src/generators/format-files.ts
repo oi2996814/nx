@@ -1,121 +1,76 @@
-import type { Tree } from 'nx/src/generators/tree';
 import * as path from 'path';
 import type * as Prettier from 'prettier';
-import { readJson, updateJson, writeJson } from 'nx/src/generators/utils/json';
-import {
-  getWorkspacePath,
-  readWorkspaceConfiguration,
-  updateWorkspaceConfiguration,
-  WorkspaceConfiguration,
-} from 'nx/src/generators/utils/project-configuration';
-import { sortObjectByKeys } from 'nx/src/utils/object-sort';
+
+import { readJson, Tree, updateJson } from 'nx/src/devkit-exports';
+import { sortObjectByKeys } from 'nx/src/devkit-internals';
 
 /**
  * Formats all the created or updated files using Prettier
  * @param tree - the file system tree
  */
-export async function formatFiles(tree: Tree): Promise<void> {
+export async function formatFiles(
+  tree: Tree,
+  options = {
+    /**
+     * TODO(v21): Stop sorting tsconfig paths by default, paths are now less common/important
+     * in Nx workspace setups, and the sorting causes comments to be lost.
+     */
+    sortRootTsconfigPaths: true,
+  }
+): Promise<void> {
   let prettier: typeof Prettier;
   try {
     prettier = await import('prettier');
   } catch {}
 
-  ensurePropertiesAreInNewLocations(tree);
-  sortWorkspaceJson(tree);
-  sortTsConfig(tree);
+  if (options.sortRootTsconfigPaths) {
+    sortTsConfig(tree);
+  }
 
   if (!prettier) return;
 
   const files = new Set(
     tree.listChanges().filter((file) => file.type !== 'DELETE')
   );
+
+  const changedPrettierInTree = getChangedPrettierConfigInTree(tree);
+
   await Promise.all(
     Array.from(files).map(async (file) => {
-      const systemPath = path.join(tree.root, file.path);
-      let options: any = {
-        filepath: systemPath,
-      };
-
-      const resolvedOptions = await prettier.resolveConfig(systemPath, {
-        editorconfig: true,
-      });
-      if (!resolvedOptions) {
-        return;
-      }
-      options = {
-        ...options,
-        ...resolvedOptions,
-      };
-
-      if (file.path.endsWith('.swcrc')) {
-        options.parser = 'json';
-      }
-
-      const support = await prettier.getFileInfo(systemPath, options);
-      if (support.ignored || !support.inferredParser) {
-        return;
-      }
-
       try {
+        const systemPath = path.join(tree.root, file.path);
+
+        const resolvedOptions = await prettier.resolveConfig(systemPath, {
+          editorconfig: true,
+        });
+
+        const options: Prettier.Options = {
+          ...resolvedOptions,
+          ...changedPrettierInTree,
+          filepath: systemPath,
+        };
+
+        if (file.path.endsWith('.swcrc')) {
+          options.parser = 'json';
+        }
+
+        const support = await prettier.getFileInfo(systemPath, options as any);
+        if (support.ignored || !support.inferredParser) {
+          return;
+        }
+
         tree.write(
           file.path,
-          prettier.format(file.content.toString('utf-8'), options)
+          // In prettier v3 the format result is a promise
+          await (prettier.format(file.content.toString('utf-8'), options) as
+            | Promise<string>
+            | string)
         );
       } catch (e) {
         console.warn(`Could not format ${file.path}. Error: "${e.message}"`);
       }
     })
   );
-}
-
-function sortWorkspaceJson(tree: Tree) {
-  const workspaceJsonPath = getWorkspacePath(tree);
-  if (!workspaceJsonPath) {
-    return;
-  }
-
-  try {
-    const workspaceJson = readJson(tree, workspaceJsonPath);
-    if (Object.entries(workspaceJson.projects).length !== 0) {
-      const sortedProjects = sortObjectByKeys(workspaceJson.projects);
-      writeJson(tree, workspaceJsonPath, {
-        ...workspaceJson,
-        projects: sortedProjects,
-      });
-    }
-  } catch (e) {
-    // catch noop
-  }
-}
-
-/**
- * `updateWorkspaceConfiguration` already handles
- * placing properties in their new locations, so
- * reading + updating it ensures that props are placed
- * correctly.
- */
-function ensurePropertiesAreInNewLocations(tree: Tree) {
-  const workspacePath = getWorkspacePath(tree);
-  if (!workspacePath) {
-    return;
-  }
-  const wc = readWorkspaceConfiguration(tree);
-  updateJson<WorkspaceConfiguration>(tree, workspacePath, (json) => {
-    wc.generators ??= json.generators ?? (json as any).schematics;
-    if (wc.cli) {
-      wc.cli.defaultCollection ??= json.cli?.defaultCollection;
-      wc.cli.packageManager ??= json.cli?.packageManager;
-    } else if (json.cli) {
-      wc.cli ??= json.cli;
-    }
-    wc.defaultProject ??= json.defaultProject;
-    delete json.cli;
-    delete json.defaultProject;
-    delete (json as any).schematics;
-    delete json.generators;
-    return json;
-  });
-  updateWorkspaceConfiguration(tree, wc);
 }
 
 function sortTsConfig(tree: Tree) {
@@ -144,4 +99,16 @@ function getRootTsConfigPath(tree: Tree): string | null {
   }
 
   return null;
+}
+
+function getChangedPrettierConfigInTree(tree: Tree): Prettier.Options | null {
+  if (tree.listChanges().find((file) => file.path === '.prettierrc')) {
+    try {
+      return readJson(tree, '.prettierrc');
+    } catch {
+      return null;
+    }
+  } else {
+    return null;
+  }
 }

@@ -1,18 +1,21 @@
-import { readProjectConfiguration, Tree } from '@nrwl/devkit';
-import { createTreeWithEmptyV1Workspace } from '@nrwl/devkit/testing';
+import 'nx/src/internal-testing-utils/mock-project-graph';
+
+import { readProjectConfiguration, Tree } from '@nx/devkit';
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
 import { Schema } from '../schema';
-import { libraryGenerator } from '../../library/library';
-import { removeProject } from '@nrwl/workspace/src/generators/remove/lib/remove-project';
+import { removeProject } from './remove-project';
+
+// nx-ignore-next-line
+const { libraryGenerator } = require('@nx/js');
 
 describe('moveProject', () => {
   let schema: Schema;
   let tree: Tree;
 
   beforeEach(async () => {
-    tree = createTreeWithEmptyV1Workspace();
+    tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
     await libraryGenerator(tree, {
-      name: 'my-lib',
-      standaloneConfig: false,
+      directory: 'my-lib',
     });
 
     schema = {

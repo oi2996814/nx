@@ -1,9 +1,9 @@
 import { output } from '../../utils/output';
 import { TaskStatus } from '../tasks-runner';
 import { getPrintableCommandArgsForTask } from '../utils';
-import type { LifeCycle } from '../life-cycle';
+import type { LifeCycle, TaskResult } from '../life-cycle';
 import { Task } from '../../config/task-graph';
-import { formatFlags } from './formatting-utils';
+import { formatFlags, formatTargetsAndProjects } from './formatting-utils';
 
 /**
  * The following life cycle's outputs are static, meaning no previous content
@@ -16,30 +16,35 @@ import { formatFlags } from './formatting-utils';
 export class StaticRunManyTerminalOutputLifeCycle implements LifeCycle {
   failedTasks = [] as Task[];
   cachedTasks = [] as Task[];
-  allCompletedTasks = new Set<Task>();
+  allCompletedTasks = new Map<string, Task>();
 
   constructor(
     private readonly projectNames: string[],
     private readonly tasks: Task[],
     private readonly args: {
-      target?: string;
+      targets?: string[];
       configuration?: string;
     },
     private readonly taskOverrides: any
   ) {}
 
   startCommand(): void {
+    if (this.tasks.length === 0) {
+      return;
+    }
     if (this.projectNames.length <= 0) {
-      let description = `with "${this.args.target}"`;
-      if (this.args.configuration) {
-        description += ` that are configured for "${this.args.configuration}"`;
-      }
-      output.logSingleLine(`No projects ${description} were run`);
+      output.logSingleLine(
+        `No projects with ${formatTargetsAndProjects(
+          this.projectNames,
+          this.args.targets,
+          this.tasks
+        )} were run`
+      );
       return;
     }
 
     const bodyLines = this.projectNames.map(
-      (affectedProject) => ` ${output.dim('-')} ${affectedProject}`
+      (affectedProject) => `${output.dim('-')} ${affectedProject}`
     );
     if (Object.keys(this.taskOverrides).length > 0) {
       bodyLines.push('');
@@ -49,16 +54,11 @@ export class StaticRunManyTerminalOutputLifeCycle implements LifeCycle {
         .forEach((arg) => bodyLines.push(arg));
     }
 
-    let title = `Running target ${output.bold(
-      this.args.target
-    )} for ${output.bold(this.projectNames.length)} project(s)`;
-    const dependentTasksCount = this.tasks.length - this.projectNames.length;
-    if (dependentTasksCount > 0) {
-      title += ` and ${output.bold(
-        dependentTasksCount
-      )} task(s) they depend on`;
-    }
-    title += ':';
+    const title = `Running ${formatTargetsAndProjects(
+      this.projectNames,
+      this.args.targets,
+      this.tasks
+    )}:`;
 
     output.log({
       color: 'cyan',
@@ -72,6 +72,10 @@ export class StaticRunManyTerminalOutputLifeCycle implements LifeCycle {
   endCommand(): void {
     output.addNewline();
 
+    if (this.tasks.length === 0) {
+      output.logSingleLine(`No tasks were run`);
+      return;
+    }
     if (this.failedTasks.length === 0) {
       output.addVerticalSeparatorWithoutNewLines('green');
 
@@ -85,9 +89,11 @@ export class StaticRunManyTerminalOutputLifeCycle implements LifeCycle {
           : [];
 
       output.success({
-        title: `Successfully ran target ${output.bold(
-          this.args.target
-        )} for ${output.bold(this.projectNames.length)} projects`,
+        title: `Successfully ran ${formatTargetsAndProjects(
+          this.projectNames,
+          this.args.targets,
+          this.tasks
+        )}`,
         bodyLines,
       });
     } else {
@@ -113,21 +119,23 @@ export class StaticRunManyTerminalOutputLifeCycle implements LifeCycle {
         )
       );
       output.error({
-        title: `Running target "${this.args.target}" failed`,
+        title: `Running ${formatTargetsAndProjects(
+          this.projectNames,
+          this.args.targets,
+          this.tasks
+        )} failed`,
         bodyLines,
       });
     }
   }
 
   private skippedTasks() {
-    return this.tasks.filter((t) => !this.allCompletedTasks.has(t));
+    return this.tasks.filter((t) => !this.allCompletedTasks.has(t.id));
   }
 
-  endTasks(
-    taskResults: { task: Task; status: TaskStatus; code: number }[]
-  ): void {
+  endTasks(taskResults: TaskResult[]): void {
     for (let t of taskResults) {
-      this.allCompletedTasks.add(t.task);
+      this.allCompletedTasks.set(t.task.id, t.task);
       if (t.status === 'failure') {
         this.failedTasks.push(t.task);
       } else if (t.status === 'local-cache') {
@@ -146,8 +154,6 @@ export class StaticRunManyTerminalOutputLifeCycle implements LifeCycle {
     terminalOutput: string
   ) {
     const args = getPrintableCommandArgsForTask(task);
-    output.logCommand(args.join(' '), cacheStatus);
-    output.addNewline();
-    process.stdout.write(terminalOutput);
+    output.logCommandOutput(args.join(' '), cacheStatus, terminalOutput);
   }
 }

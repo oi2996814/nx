@@ -1,8 +1,7 @@
-import { Node, SourceFile } from 'typescript';
-import { Tree } from 'nx/src/generators/tree';
-import { tsquery } from '@phenomnomnominal/tsquery';
+import { joinPathFragments, type Tree } from '@nx/devkit';
 import { parse } from 'path';
-import { joinPathFragments } from 'nx/src/utils/path';
+import type { Node, SourceFile } from 'typescript';
+import { getInstalledAngularVersionInfo } from '../../utils/version-utils';
 
 export function convertScamToStandalone(
   componentAST: SourceFile,
@@ -17,17 +16,19 @@ export function convertScamToStandalone(
   let newComponentContents = '';
   const COMPONENT_PROPERTY_SELECTOR =
     'ClassDeclaration > Decorator > CallExpression:has(Identifier[name=Component]) ObjectLiteralExpression';
+  const { tsquery } = require('@phenomnomnominal/tsquery');
   const componentDecoratorMetadataNode = tsquery(
     componentAST,
     COMPONENT_PROPERTY_SELECTOR,
     { visitAllChildren: true }
   )[0];
 
+  const { major: angularMajorVersion } = getInstalledAngularVersionInfo(tree);
+
   newComponentContents = `${componentFileContents.slice(
     0,
     componentDecoratorMetadataNode.getStart() - 1
-  )}({
-    standalone: true,
+  )}({${angularMajorVersion < 19 ? `\nstandalone: true,` : ''}
     imports: [${importsArray.join(',')}],${
     providersArray.length > 0 ? `providers: [${providersArray.join(',')}],` : ''
   }${componentFileContents.slice(

@@ -1,32 +1,60 @@
 import {
   addProjectConfiguration,
+  joinPathFragments,
   ProjectConfiguration,
-  readWorkspaceConfiguration,
+  readNxJson,
   TargetConfiguration,
   Tree,
-  updateWorkspaceConfiguration,
-} from '@nrwl/devkit';
+  writeJson,
+} from '@nx/devkit';
 import { NormalizedSchema } from './normalize-options';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
+import type { PackageJson } from 'nx/src/utils/package-json';
 
 export function addProject(host: Tree, options: NormalizedSchema) {
+  const nxJson = readNxJson(host);
+  const hasPlugin = nxJson.plugins?.some((p) =>
+    typeof p === 'string'
+      ? p === '@nx/react-native/plugin'
+      : p.plugin === '@nx/react-native/plugin'
+  );
+
   const project: ProjectConfiguration = {
     root: options.appProjectRoot,
     sourceRoot: `${options.appProjectRoot}/src`,
     projectType: 'application',
-    targets: { ...getTargets(options) },
+    targets: hasPlugin ? {} : getTargets(options),
     tags: options.parsedTags,
   };
 
-  addProjectConfiguration(host, options.projectName, {
-    ...project,
-  });
+  if (isUsingTsSolutionSetup(host)) {
+    const packageJson: PackageJson = {
+      name: options.importPath,
+      version: '0.0.1',
+      private: true,
+    };
 
-  const workspace = readWorkspaceConfiguration(host);
+    if (options.projectName !== options.importPath) {
+      packageJson.nx = { name: options.projectName };
+    }
+    if (!hasPlugin) {
+      packageJson.nx ??= {};
+      packageJson.nx.targets = getTargets(options);
+    }
+    if (options.parsedTags?.length) {
+      packageJson.nx ??= {};
+      packageJson.nx.tags = options.parsedTags;
+    }
 
-  if (!workspace.defaultProject) {
-    workspace.defaultProject = options.projectName;
-
-    updateWorkspaceConfiguration(host, workspace);
+    writeJson(
+      host,
+      joinPathFragments(options.appProjectRoot, 'package.json'),
+      packageJson
+    );
+  } else {
+    addProjectConfiguration(host, options.projectName, {
+      ...project,
+    });
   }
 }
 
@@ -34,27 +62,23 @@ function getTargets(options: NormalizedSchema) {
   const architect: { [key: string]: TargetConfiguration } = {};
 
   architect.start = {
-    executor: '@nrwl/react-native:start',
+    executor: '@nx/react-native:start',
+    dependsOn: [],
     options: {
       port: 8081,
     },
   };
 
-  architect.serve = {
-    executor: 'nx:run-commands',
-    options: {
-      command: `nx start ${options.name}`,
-    },
-  };
-
   architect['run-ios'] = {
-    executor: '@nrwl/react-native:run-ios',
+    executor: '@nx/react-native:run-ios',
+    dependsOn: [],
     options: {},
   };
 
   architect['bundle-ios'] = {
-    executor: '@nrwl/react-native:bundle',
-    outputs: [`${options.appProjectRoot}/build`],
+    executor: '@nx/react-native:bundle',
+    dependsOn: [],
+    outputs: ['{options.bundleOutput}'],
     options: {
       entryFile: options.entryFile,
       platform: 'ios',
@@ -63,21 +87,44 @@ function getTargets(options: NormalizedSchema) {
   };
 
   architect['run-android'] = {
-    executor: '@nrwl/react-native:run-android',
+    executor: '@nx/react-native:run-android',
+    dependsOn: [],
     options: {},
   };
 
   architect['build-android'] = {
-    executor: '@nrwl/react-native:build-android',
+    executor: '@nx/react-native:build-android',
     outputs: [
-      `${options.appProjectRoot}/android/app/build/outputs/bundle`,
-      `${options.appProjectRoot}/android/app/build/outputs/apk`,
+      `{projectRoot}/android/app/build/outputs/bundle`,
+      `{projectRoot}/android/app/build/outputs/apk`,
     ],
+    dependsOn: [],
+    options: {},
+  };
+
+  architect['build-ios'] = {
+    executor: '@nx/react-native:build-ios',
+    outputs: ['{projectRoot}/ios/build/Build'],
+    dependsOn: [],
+    options: {},
+  };
+
+  architect['pod-install'] = {
+    executor: '@nx/react-native:pod-install',
+    dependsOn: ['sync-deps'],
+    outputs: ['{projectRoot}/ios/Pods', '{projectRoot}/ios/Podfile.lock'],
+    options: {},
+  };
+
+  architect.upgrade = {
+    executor: '@nx/react-native:upgrade',
     options: {},
   };
 
   architect['bundle-android'] = {
-    executor: '@nrwl/react-native:bundle',
+    executor: '@nx/react-native:bundle',
+    dependsOn: [],
+    outputs: ['{options.bundleOutput}'],
     options: {
       entryFile: options.entryFile,
       platform: 'android',
@@ -86,12 +133,7 @@ function getTargets(options: NormalizedSchema) {
   };
 
   architect['sync-deps'] = {
-    executor: '@nrwl/react-native:sync-deps',
-    options: {},
-  };
-
-  architect['ensure-symlink'] = {
-    executor: '@nrwl/react-native:ensure-symlink',
+    executor: '@nx/react-native:sync-deps',
     options: {},
   };
 

@@ -1,17 +1,16 @@
 import {
+  getOutputsForTargetAndConfiguration,
   normalizePath,
   readProjectConfiguration,
   Tree,
   updateJson,
   workspaceRoot,
-} from '@nrwl/devkit';
-import { getNewProjectName } from '@nrwl/workspace/src/generators/move/lib/utils';
+} from '@nx/devkit';
 import { join, relative } from 'path';
-import { Schema } from '../schema';
+import type { MoveImplOptions } from './types';
 
-export function updateNgPackage(tree: Tree, schema: Schema): void {
-  const newProjectName = getNewProjectName(schema.destination);
-  const project = readProjectConfiguration(tree, newProjectName);
+export function updateNgPackage(tree: Tree, schema: MoveImplOptions): void {
+  const project = readProjectConfiguration(tree, schema.newProjectName);
 
   if (project.projectType === 'application') {
     return;
@@ -25,10 +24,23 @@ export function updateNgPackage(tree: Tree, schema: Schema): void {
   const rootOffset = normalizePath(
     relative(join(workspaceRoot, project.root), workspaceRoot)
   );
-  let output = `dist/${project.root}`;
-  if (project.targets?.build?.outputs?.length > 0) {
-    output = project.targets.build.outputs[0];
-  }
+  const outputs = getOutputsForTargetAndConfiguration(
+    {
+      project: schema.newProjectName,
+      target: 'build',
+    },
+    {},
+    {
+      name: schema.newProjectName,
+      type: 'lib',
+      data: {
+        root: project.root,
+        targets: project.targets,
+      },
+    } as any
+  );
+
+  const output = outputs[0] ?? `dist/${project.root}`;
 
   updateJson(tree, ngPackagePath, (json) => {
     json.dest = `${rootOffset}/${output}`;

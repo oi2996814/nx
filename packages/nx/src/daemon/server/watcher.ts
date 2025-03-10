@@ -1,146 +1,93 @@
-/**
- * In addition to its native performance, another great advantage of `@parcel/watcher` is that it will
- * automatically take advantage of Facebook's watchman tool (https://facebook.github.io/watchman/) if
- * the user has it installed (but not require it if they don't).
- *
- * See https://github.com/parcel-bundler/watcher for more details.
- */
 import { workspaceRoot } from '../../utils/workspace-root';
-import type { AsyncSubscription, Event } from '@parcel/watcher';
-import { readFileSync } from 'fs';
-import { join, relative } from 'path';
-import { FULL_OS_SOCKET_PATH } from '../socket-utils';
+import { dirname, relative } from 'path';
+import { getFullOsSocketPath } from '../socket-utils';
 import { handleServerProcessTermination } from './shutdown-utils';
 import { Server } from 'net';
-import ignore from 'ignore';
 import { normalizePath } from '../../utils/path';
+import {
+  getAlwaysIgnore,
+  getIgnoredGlobs,
+  getIgnoreObject,
+} from '../../utils/ignore';
+import { platform } from 'os';
+import { getDaemonProcessIdSync, serverProcessJsonPath } from '../cache';
+import type { WatchEvent } from '../../native';
+import { openSockets } from './server';
 
 const ALWAYS_IGNORE = [
-  join(workspaceRoot, 'node_modules'),
-  join(workspaceRoot, '.git'),
-  FULL_OS_SOCKET_PATH,
+  ...getAlwaysIgnore(workspaceRoot),
+  getFullOsSocketPath(),
 ];
 
-function getIgnoredGlobs() {
-  return [
-    ...ALWAYS_IGNORE,
-    ...getIgnoredGlobsFromFile(join(workspaceRoot, '.nxignore')),
-    ...getIgnoredGlobsFromFile(join(workspaceRoot, '.gitignore')),
-  ];
-}
-
-function getIgnoredGlobsFromFile(file: string): string[] {
-  try {
-    return readFileSync(file, 'utf-8')
-      .split('\n')
-      .map((i) => i.trim())
-      .filter((i) => !!i && !i.startsWith('#'))
-      .map((i) => (i.startsWith('/') ? join(workspaceRoot, i) : i));
-  } catch (e) {
-    return [];
-  }
-}
-
 export type FileWatcherCallback = (
-  err: Error | null,
-  changeEvents: Event[] | null
+  err: Error | string | null,
+  changeEvents: WatchEvent[] | null
 ) => Promise<void>;
 
-function configureIgnoreObject() {
-  const ig = ignore();
-  try {
-    ig.add(readFileSync(`${workspaceRoot}/.gitignore`, 'utf-8'));
-  } catch {}
-  try {
-    ig.add(readFileSync(`${workspaceRoot}/.nxignore`, 'utf-8'));
-  } catch {}
-  return ig;
-}
+export async function watchWorkspace(server: Server, cb: FileWatcherCallback) {
+  const { Watcher } = await import('../../native');
 
-export async function subscribeToOutputsChanges(
-  cb: FileWatcherCallback
-): Promise<AsyncSubscription> {
-  const watcher = await import('@parcel/watcher');
-  return await watcher.subscribe(
-    workspaceRoot,
-    (err, events) => {
-      if (err) {
-        return cb(err, null);
-      } else {
-        const workspaceRelativeEvents: Event[] = [];
-        for (const event of events) {
-          const workspaceRelativeEvent: Event = {
-            type: event.type,
-            path: normalizePath(relative(workspaceRoot, event.path)),
-          };
-          workspaceRelativeEvents.push(workspaceRelativeEvent);
-        }
-        cb(null, workspaceRelativeEvents);
-      }
-    },
-    {
-      ignore: [...ALWAYS_IGNORE],
+  const watcher = new Watcher(workspaceRoot);
+  watcher.watch((err, events) => {
+    if (err) {
+      return cb(err, null);
     }
-  );
-}
 
-export async function subscribeToWorkspaceChanges(
-  server: Server,
-  cb: FileWatcherCallback
-): Promise<AsyncSubscription> {
-  /**
-   * The imports and exports of @nrwl/workspace are somewhat messy and far reaching across the repo (and beyond),
-   * and so it is much safer for us to lazily load here `@parcel/watcher` so that its inclusion is not inadvertently
-   * executed by packages which do not have its necessary native binaries available.
-   */
-  const watcher = await import('@parcel/watcher');
-  const ignoreObj = configureIgnoreObject();
-
-  return await watcher.subscribe(
-    workspaceRoot,
-    (err, events) => {
-      if (err) {
-        return cb(err, null);
-      }
-
-      let hasIgnoreFileUpdate = false;
-
-      // Most of our utilities (ignore, hashing etc) require unix-style workspace relative paths
-      const workspaceRelativeEvents: Event[] = [];
-      for (const event of events) {
-        const workspaceRelativeEvent: Event = {
-          type: event.type,
-          path: normalizePath(relative(workspaceRoot, event.path)),
-        };
-        if (
-          workspaceRelativeEvent.path === '.gitignore' ||
-          workspaceRelativeEvent.path === '.nxignore'
-        ) {
-          hasIgnoreFileUpdate = true;
-        }
-        workspaceRelativeEvents.push(workspaceRelativeEvent);
-      }
-
-      // If the ignore files themselves have changed we need to dynamically update our cached ignoreGlobs
-      if (hasIgnoreFileUpdate) {
+    for (const event of events) {
+      if (event.path.endsWith('.gitignore') || event.path === '.nxignore') {
+        // If the ignore files themselves have changed we need to dynamically update our cached ignoreGlobs
         handleServerProcessTermination({
           server,
-          reason: 'Stopping the daemon the set of ignored files changed.',
+          reason:
+            'Stopping the daemon the set of ignored files changed (native)',
+          sockets: openSockets,
         });
       }
-
-      const nonIgnoredEvents = workspaceRelativeEvents
-        .filter(({ path }) => !!path)
-        .filter(({ path }) => !ignoreObj.ignores(path));
-
-      if (nonIgnoredEvents && nonIgnoredEvents.length > 0) {
-        cb(null, nonIgnoredEvents);
-      }
-    },
-    {
-      ignore: getIgnoredGlobs(),
     }
+
+    cb(null, events);
+  });
+
+  return watcher;
+}
+
+export async function watchOutputFiles(
+  server: Server,
+  cb: FileWatcherCallback
+) {
+  const { Watcher } = await import('../../native');
+
+  const relativeServerProcess = normalizePath(
+    relative(workspaceRoot, serverProcessJsonPath)
   );
+  const watcher = new Watcher(
+    workspaceRoot,
+    [`!${relativeServerProcess}`],
+    false
+  );
+  watcher.watch((err, events) => {
+    if (err) {
+      return cb(err, null);
+    }
+
+    for (const event of events) {
+      if (
+        event.path == relativeServerProcess &&
+        getDaemonProcessIdSync() !== process.pid
+      ) {
+        return handleServerProcessTermination({
+          server,
+          reason: 'this process is no longer the current daemon (native)',
+          sockets: openSockets,
+        });
+      }
+    }
+
+    if (events.length !== 0) {
+      cb(null, events);
+    }
+  });
+  return watcher;
 }
 
 /**
@@ -148,7 +95,9 @@ export async function subscribeToWorkspaceChanges(
  * an original version of a file after modifying/deleting it by using git, so we adjust
  * our log language accordingly.
  */
-export function convertChangeEventsToLogMessage(changeEvents: Event[]): string {
+export function convertChangeEventsToLogMessage(
+  changeEvents: WatchEvent[]
+): string {
   // If only a single file was changed, show the information inline
   if (changeEvents.length === 1) {
     const { path, type } = changeEvents[0];

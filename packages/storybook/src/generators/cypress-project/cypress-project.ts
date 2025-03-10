@@ -1,80 +1,119 @@
+import { getE2eProjectName } from '@nx/cypress/src/utils/project-name';
 import {
-  cypressInitGenerator as _cypressInitGenerator,
-  cypressProjectGenerator as _cypressProjectGenerator,
-} from '@nrwl/cypress';
-import {
-  getE2eProjectName,
-  getUnscopedLibName,
-} from '@nrwl/cypress/src/utils/project-name';
-import {
-  convertNxGenerator,
+  addProjectConfiguration,
+  ensurePackage,
   formatFiles,
   generateFiles,
-  GeneratorCallback,
   joinPathFragments,
+  logger,
   readJson,
+  readNxJson,
   readProjectConfiguration,
   Tree,
   updateJson,
   updateProjectConfiguration,
-} from '@nrwl/devkit';
-import { Linter } from '@nrwl/linter';
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
+} from '@nx/devkit';
+import { Linter, LinterType } from '@nx/eslint';
+import { determineProjectNameAndRootOptions } from '@nx/devkit/src/generators/project-name-and-root-utils';
 import { join } from 'path';
+
 import { safeFileDelete } from '../../utils/utilities';
+import { nxVersion } from '../../utils/versions';
 
 export interface CypressConfigureSchema {
   name: string;
   js?: boolean;
   directory?: string;
-  linter: Linter;
+  linter: Linter | LinterType;
   standaloneConfig?: boolean;
+  ciTargetName?: string;
+  skipFormat?: boolean;
 }
 
 export async function cypressProjectGenerator(
   tree: Tree,
   schema: CypressConfigureSchema
 ) {
+  logger.warn(
+    `Use 'interactionTests' instead when running '@nx/storybook:configuration'. This generator will be removed in v21.`
+  );
+  const { configurationGenerator } = ensurePackage<
+    typeof import('@nx/cypress')
+  >('@nx/cypress', nxVersion);
+
+  const e2eName = schema.name ? `${schema.name}-e2e` : undefined;
+  const { projectName, projectRoot } = await determineProjectNameAndRootOptions(
+    tree,
+    {
+      name: e2eName,
+      projectType: 'application',
+      directory: schema.directory,
+    }
+  );
   const libConfig = readProjectConfiguration(tree, schema.name);
   const libRoot = libConfig.root;
-  const cypressProjectName = `${
-    schema.directory ? getUnscopedLibName(libRoot) : schema.name
-  }-e2e`;
 
-  const tasks: GeneratorCallback[] = [];
+  addProjectConfiguration(tree, projectName, {
+    root: projectRoot,
+    projectType: 'application',
+    sourceRoot: joinPathFragments(projectRoot, 'src'),
+    targets: {},
+    implicitDependencies: [projectName],
+  });
 
-  if (!projectAlreadyHasCypress(tree)) {
-    tasks.push(_cypressInitGenerator(tree, {}));
-  }
-
-  const installTask = await _cypressProjectGenerator(tree, {
-    name: cypressProjectName,
-    project: schema.name,
+  const cypressTask = await configurationGenerator(tree, {
+    project: projectName,
     js: schema.js,
     linter: schema.linter,
-    directory: schema.directory,
-    standaloneConfig: schema.standaloneConfig,
+    devServerTarget: `${schema.name}:storybook`,
+    skipFormat: true,
   });
-  tasks.push(installTask);
 
-  const generatedCypressProjectName = getE2eProjectName(
-    schema.name,
-    libRoot,
-    schema.directory
-  );
+  const generatedCypressProjectName = projectName;
   removeUnneededFiles(tree, generatedCypressProjectName, schema.js);
-  addBaseUrlToCypressConfig(tree, generatedCypressProjectName);
-  updateAngularJsonBuilder(tree, generatedCypressProjectName, schema.name);
 
-  await formatFiles(tree);
+  const project = readProjectConfiguration(tree, generatedCypressProjectName);
+  if (project.targets.e2e && project.targets.e2e.options) {
+    addBaseUrlToCypressConfig(tree, generatedCypressProjectName, project.root);
+    updateAngularJsonBuilder(tree, {
+      e2eProjectName: generatedCypressProjectName,
+      targetProjectName: schema.name,
+      ciTargetName: schema.ciTargetName,
+    });
+  } else if (hasCypressPlugin(tree)) {
+    generateCypressConfigForInferredPlugin(
+      tree,
+      generatedCypressProjectName,
+      project.root,
+      schema.name,
+      schema.ciTargetName
+    );
+  } else {
+    throw new Error(
+      `Unable to generate Cypress Project for Storybook project. Please report this issue at https://github.com/nrwl/nx/issues/new/choose`
+    );
+  }
 
-  return runTasksInSerial(...tasks);
+  if (!schema.skipFormat) {
+    await formatFiles(tree);
+  }
+
+  return cypressTask;
+}
+
+function hasCypressPlugin(tree: Tree) {
+  const nxJson = readNxJson(tree);
+  return nxJson.plugins?.some((p) =>
+    typeof p === 'string'
+      ? p === '@nx/cypress/plugin'
+      : p.plugin === '@nx/cypress/plugin'
+  );
 }
 
 function removeUnneededFiles(tree: Tree, projectName: string, js: boolean) {
   const { sourceRoot, root } = readProjectConfiguration(tree, projectName);
   const fileType = js ? 'js' : 'ts';
-  if (tree.exists(join(root, 'cypress.config.ts'))) {
+  if (tree.exists(joinPathFragments(root, 'cypress.config.ts'))) {
     safeFileDelete(tree, `${sourceRoot}/e2e/app.cy.${fileType}`);
     safeFileDelete(tree, `${sourceRoot}/support/app.po.${fileType}`);
   } else {
@@ -83,10 +122,44 @@ function removeUnneededFiles(tree: Tree, projectName: string, js: boolean) {
   }
 }
 
-function addBaseUrlToCypressConfig(tree: Tree, projectName: string) {
-  const projectRoot = readProjectConfiguration(tree, projectName).root;
-  const cypressJson = join(projectRoot, 'cypress.json');
-  const cypressTs = join(projectRoot, 'cypress.config.ts');
+function generateCypressConfigForInferredPlugin(
+  tree: Tree,
+  projectName: string,
+  projectRoot: string,
+  targetProjectName: string,
+  ciTargetName?: string
+) {
+  const cypressJson = joinPathFragments(projectRoot, 'cypress.json');
+  const cypressTs = joinPathFragments(projectRoot, 'cypress.config.ts');
+
+  if (tree.exists(cypressJson)) {
+    tree.delete(cypressJson);
+  }
+  if (tree.exists(cypressTs)) {
+    // cypress >= v10
+    tree.delete(cypressTs);
+    generateFiles(
+      tree,
+      join(__dirname, 'files', 'inferred-target'),
+      projectRoot,
+      {
+        defaultWebServerCommand: `npx nx run ${targetProjectName}:storybook`,
+        ciWebServerCommand: ciTargetName
+          ? `npx nx run ${targetProjectName}:${ciTargetName}:ci`
+          : `npx nx run ${targetProjectName}:storybook:ci`,
+        tpl: '',
+      }
+    );
+  }
+}
+
+function addBaseUrlToCypressConfig(
+  tree: Tree,
+  projectName: string,
+  projectRoot: string
+) {
+  const cypressJson = joinPathFragments(projectRoot, 'cypress.json');
+  const cypressTs = joinPathFragments(projectRoot, 'cypress.config.ts');
   // TODO(caleb): remove this when cypress < v10 is deprecated
 
   if (tree.exists(cypressJson)) {
@@ -98,45 +171,42 @@ function addBaseUrlToCypressConfig(tree: Tree, projectName: string) {
   } else if (tree.exists(cypressTs)) {
     // cypress >= v10
     tree.delete(cypressTs);
-    generateFiles(tree, joinPathFragments(__dirname, 'files'), projectRoot, {
-      tpl: '',
-    });
+    generateFiles(
+      tree,
+      join(__dirname, 'files', 'explicit-target'),
+      projectRoot,
+      {
+        tpl: '',
+      }
+    );
   }
 }
 
 function updateAngularJsonBuilder(
   tree: Tree,
-  e2eProjectName: string,
-  targetProjectName: string
+  opts: {
+    e2eProjectName: string;
+    targetProjectName: string;
+    ciTargetName?: string;
+  }
 ) {
-  const project = readProjectConfiguration(tree, e2eProjectName);
-  const e2eTarget = project.targets.e2e;
+  const project = readProjectConfiguration(tree, opts.e2eProjectName);
+  const e2eTarget = project.targets.e2e ?? {};
   project.targets.e2e = {
     ...e2eTarget,
     options: <any>{
       ...e2eTarget.options,
-      devServerTarget: `${targetProjectName}:storybook`,
+      devServerTarget: `${opts.targetProjectName}:storybook`,
     },
     configurations: {
       ci: {
-        devServerTarget: `${targetProjectName}:storybook:ci`,
+        devServerTarget: opts.ciTargetName
+          ? `${opts.targetProjectName}:${opts.ciTargetName}:ci`
+          : `${opts.targetProjectName}:storybook:ci`,
       },
     },
   };
-  updateProjectConfiguration(tree, e2eProjectName, project);
-}
-
-function projectAlreadyHasCypress(tree: Tree): boolean {
-  const packageJsonContents = readJson(tree, 'package.json');
-  return (
-    (packageJsonContents?.['devDependencies']?.['@nrwl/cypress'] ||
-      packageJsonContents?.['dependencies']?.['@nrwl/cypress']) &&
-    (packageJsonContents?.['devDependencies']?.['cypress'] ||
-      packageJsonContents?.['dependencies']?.['cypress'])
-  );
+  updateProjectConfiguration(tree, opts.e2eProjectName, project);
 }
 
 export default cypressProjectGenerator;
-export const cypressProjectSchematic = convertNxGenerator(
-  cypressProjectGenerator
-);

@@ -1,21 +1,40 @@
+/* eslint-disable @nx/enforce-module-boundaries */
 // nx-ignore-next-line
-import type { DepGraphClientResponse } from 'nx/src/command-line/dep-graph';
-import { AppConfig } from './app/interfaces';
-import { ExternalApi } from './app/machines/externalApi';
+import type {
+  ExpandedTaskInputsReponse,
+  ProjectGraphClientResponse,
+  TaskGraphClientResponse,
+} from 'nx/src/command-line/graph/graph';
+import type { AppConfig, ExternalApi } from '@nx/graph/shared';
+import {
+  ProjectDetailsEvents,
+  projectDetailsMachine,
+  ProjectDetailsState,
+} from './app/console/project-details/project-details.machine';
+import { Interpreter } from 'xstate';
 
 export declare global {
-  export interface Window {
+  interface Window {
     exclude: string[];
     watch: boolean;
     localMode: 'serve' | 'build';
-    projectGraphResponse?: DepGraphClientResponse;
+    projectGraphResponse?: ProjectGraphClientResponse;
+    taskGraphResponse?: TaskGraphClientResponse;
+    expandedTaskInputsResponse?: ExpandedTaskInputsReponse;
+    sourceMapsResponse?: Record<string, Record<string, string[]>>;
     environment: 'dev' | 'watch' | 'release' | 'nx-console';
     appConfig: AppConfig;
     useXstateInspect: boolean;
     externalApi?: ExternalApi;
+
+    // using bundled graph components directly from outside the graph app
+    __NX_RENDER_GRAPH__?: boolean;
+    renderPDV?: (
+      data: any
+    ) => Interpreter<ProjectDetailsState, any, ProjectDetailsEvents>;
+    renderError?: (data: any) => void;
   }
 }
-
 declare module 'cytoscape' {
   interface Core {
     anywherePanning: Function;

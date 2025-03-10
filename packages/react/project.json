@@ -1,23 +1,12 @@
 {
+  "name": "react",
   "$schema": "../../node_modules/nx/schemas/project-schema.json",
   "sourceRoot": "packages/react",
   "projectType": "library",
   "targets": {
-    "test": {
-      "executor": "@nrwl/jest:jest",
-      "options": {
-        "jestConfig": "packages/react/jest.config.ts",
-        "passWithNoTests": true
-      },
-      "outputs": ["coverage/packages/react"]
-    },
     "build-base": {
-      "executor": "@nrwl/js:tsc",
+      "executor": "@nx/js:tsc",
       "options": {
-        "outputPath": "build/packages/react",
-        "tsConfig": "packages/react/tsconfig.lib.json",
-        "main": "packages/react/index.ts",
-        "updateBuildableProjectDepsInPackageJson": false,
         "assets": [
           {
             "input": "packages/react",
@@ -62,36 +51,14 @@
             "output": "/"
           }
         ]
-      },
-      "outputs": ["{options.outputPath}"]
+      }
     },
     "build": {
       "executor": "nx:run-commands",
-      "outputs": ["build/packages/react"],
+      "outputs": ["{workspaceRoot}/build/packages/react"],
       "options": {
         "command": "node ./scripts/copy-readme.js react"
       }
-    },
-    "lint": {
-      "executor": "@nrwl/linter:eslint",
-      "options": {
-        "lintFilePatterns": [
-          "packages/react/**/*.ts",
-          "packages/react/**/*.spec.ts",
-          "packages/react/**/*_spec.ts",
-          "packages/react/**/*.spec.tsx",
-          "packages/react/**/*.spec.js",
-          "packages/react/**/*.spec.jsx",
-          "packages/react/**/*.d.ts",
-          "packages/react/**/executors/**/schema.json",
-          "packages/react/**/generators/**/schema.json",
-          "packages/react/generators.json",
-          "packages/react/executors.json",
-          "packages/react/package.json",
-          "packages/react/migrations.json"
-        ]
-      },
-      "outputs": ["{options.outputFile}"]
     }
   }
 }

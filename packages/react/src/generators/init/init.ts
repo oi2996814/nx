@@ -1,93 +1,42 @@
-import { cypressInitGenerator } from '@nrwl/cypress';
 import {
   addDependenciesToPackageJson,
-  convertNxGenerator,
-  GeneratorCallback,
-  readWorkspaceConfiguration,
+  formatFiles,
   removeDependenciesFromPackageJson,
-  Tree,
-  updateWorkspaceConfiguration,
-} from '@nrwl/devkit';
-import { jestInitGenerator } from '@nrwl/jest';
-import { webInitGenerator } from '@nrwl/web';
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
-import {
-  nxVersion,
-  reactDomVersion,
-  reactTestRendererVersion,
-  reactVersion,
-  testingLibraryReactVersion,
-  tsLibVersion,
-  typesNodeVersion,
-  typesReactDomVersion,
-  typesReactVersion,
-} from '../../utils/versions';
+  runTasksInSerial,
+  type GeneratorCallback,
+  type Tree,
+} from '@nx/devkit';
+import { nxVersion } from '../../utils/versions';
 import { InitSchema } from './schema';
+import { getReactDependenciesVersionsToInstall } from '../../utils/version-utils';
 
-function setDefault(host: Tree) {
-  const workspace = readWorkspaceConfiguration(host);
-
-  workspace.generators = workspace.generators || {};
-  const reactGenerators = workspace.generators['@nrwl/react'] || {};
-  const generators = {
-    ...workspace.generators,
-    '@nrwl/react': {
-      ...reactGenerators,
-      application: {
-        ...reactGenerators.application,
-        babel: true,
-      },
-    },
-  };
-
-  updateWorkspaceConfiguration(host, { ...workspace, generators });
-}
-
-function updateDependencies(host: Tree) {
-  removeDependenciesFromPackageJson(host, ['@nrwl/react'], []);
-
-  return addDependenciesToPackageJson(
-    host,
-    {
-      'core-js': '^3.6.5',
-      react: reactVersion,
-      'react-dom': reactDomVersion,
-      'regenerator-runtime': '0.13.7',
-      tslib: tsLibVersion,
-    },
-    {
-      '@nrwl/react': nxVersion,
-      '@types/node': typesNodeVersion,
-      '@types/react': typesReactVersion,
-      '@types/react-dom': typesReactDomVersion,
-      '@testing-library/react': testingLibraryReactVersion,
-      'react-test-renderer': reactTestRendererVersion,
-    }
-  );
-}
-
-export async function reactInitGenerator(host: Tree, schema: InitSchema) {
+export async function reactInitGenerator(tree: Tree, schema: InitSchema) {
   const tasks: GeneratorCallback[] = [];
 
-  setDefault(host);
-
-  if (!schema.unitTestRunner || schema.unitTestRunner === 'jest') {
-    const jestTask = jestInitGenerator(host, schema);
-    tasks.push(jestTask);
+  if (!schema.skipPackageJson) {
+    tasks.push(removeDependenciesFromPackageJson(tree, ['@nx/react'], []));
+    const reactDeps = await getReactDependenciesVersionsToInstall(tree);
+    tasks.push(
+      addDependenciesToPackageJson(
+        tree,
+        {
+          react: reactDeps.react,
+          'react-dom': reactDeps['react-dom'],
+        },
+        {
+          '@nx/react': nxVersion,
+        },
+        undefined,
+        schema.keepExistingVersions
+      )
+    );
   }
-  if (!schema.e2eTestRunner || schema.e2eTestRunner === 'cypress') {
-    const cypressTask = cypressInitGenerator(host, {});
-    tasks.push(cypressTask);
-  }
 
-  const initTask = await webInitGenerator(host, schema);
-  tasks.push(initTask);
-  const installTask = updateDependencies(host);
-  tasks.push(installTask);
+  if (!schema.skipFormat) {
+    await formatFiles(tree);
+  }
 
   return runTasksInSerial(...tasks);
 }
 
 export default reactInitGenerator;
-
-export const reactInitSchematic = convertNxGenerator(reactInitGenerator);

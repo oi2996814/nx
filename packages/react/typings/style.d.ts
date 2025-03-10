@@ -1,8 +1,8 @@
 export type SupportedStyles =
   | 'css'
   | 'scss'
-  | 'styl'
   | 'less'
+  | 'tailwind'
   | 'styled-components'
   | '@emotion/styled'
   | 'styled-jsx'

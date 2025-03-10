@@ -1,0 +1,18 @@
+import React from 'react';
+import { render } from '@testing-library/react';
+<%_ if (src && !appDir) { _%>
+import Index from '../src/pages/index';
+<%_ } else if (!appDir) { _%>
+import Index from '../pages/index';
+<%_ } else if (appDir && src) { _%>
+import Page from '../src/app/page';
+<%_ } else { _%>
+import Page from '../app/page';
+<%_ } _%>
+
+describe(<%- appDir ? `'Page'` : `'Index'` %>, () => {
+  it('should render successfully', () => {
+    const { baseElement } = render(<%- appDir ? `<Page />` : `<Index />` %>);
+    expect(baseElement).toBeTruthy();
+  });
+});

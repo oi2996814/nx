@@ -5,7 +5,15 @@
   "overrides": [
     {
       "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
-      "rules": {}
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "name": "chalk",
+            "message": "Please use `picocolors` in place of `chalk` for rendering terminal colors"
+          }
+        ]
+      }
     },
     {
       "files": ["*.ts", "*.tsx"],
@@ -19,7 +27,7 @@
       "files": ["**/*.ts"],
       "excludedFiles": ["./src/migrations/**"],
       "rules": {
-        "no-restricted-imports": ["error", "@nrwl/workspace"]
+        "no-restricted-imports": ["error", "@nx/workspace"]
       }
     },
     {
@@ -31,7 +39,73 @@
       ],
       "parser": "jsonc-eslint-parser",
       "rules": {
-        "@nrwl/nx/nx-plugin-checks": "error"
+        "@nx/nx-plugin-checks": "error"
+      }
+    },
+    {
+      "files": ["./package.json"],
+      "parser": "jsonc-eslint-parser",
+      "rules": {
+        "@nx/dependency-checks": [
+          "error",
+          {
+            "buildTargets": ["build-base"],
+            "ignoredDependencies": [
+              "nx",
+              "eslint",
+              "vite",
+              "rxjs",
+              "semver",
+              "@nx/cypress",
+              "@nx/playwright",
+              "@nx/jest",
+              "@nx/rollup",
+              "@nx/storybook",
+              "@nx/vite",
+              "@nx/webpack",
+              "prettier",
+              "typescript",
+              "@schematics/angular",
+              "@angular-devkit/core",
+              "@angular-devkit/architect",
+              "@angular-devkit/build-angular",
+              "@angular-devkit/schematics",
+              "@angular/compiler",
+              "@angular/compiler-cli",
+              "@angular/core",
+              "@angular/router",
+              "@ngrx/effects",
+              "@ngrx/router-store",
+              "@ngrx/store",
+              "@storybook/angular",
+              "@module-federation/node",
+              "@nguniversal/builders",
+              "ng-packagr",
+              "injection-js",
+              "browserslist",
+              "cacache",
+              "less",
+              "node-sass",
+              "node-sass-tilde-importer",
+              "ora",
+              "convert-source-map",
+              "postcss",
+              "autoprefixer",
+              "postcss-url",
+              "sass",
+              "stylus",
+              "tailwindcss",
+              "cypress",
+              "esbuild"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "files": ["*.ts"],
+      "rules": {
+        "@angular-eslint/prefer-standalone": "off"
       }
     }
   ]

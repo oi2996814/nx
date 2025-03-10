@@ -1,22 +1,18 @@
-import type { ExecutorContext } from '@nrwl/devkit';
-import { eachValueFrom } from '@nrwl/devkit/src/utils/rxjs-for-await';
+import type { ExecutorContext } from '@nx/devkit';
+import { eachValueFrom } from '@nx/devkit/src/utils/rxjs-for-await';
 import {
-  calculateProjectDependencies,
+  calculateProjectBuildableDependencies,
   checkDependentProjectsHaveBeenBuilt,
   createTmpTsConfig,
-  DependentBuildableProjectNode,
-  updateBuildableProjectPackageJsonDependencies,
-} from '@nrwl/workspace/src/utilities/buildable-libs-utils';
+  type DependentBuildableProjectNode,
+} from '@nx/js/src/utils/buildable-libs-utils';
 import type { NgPackagr } from 'ng-packagr';
-import { resolve } from 'path';
+import { join, resolve } from 'path';
 import { from } from 'rxjs';
-import { mapTo, switchMap, tap } from 'rxjs/operators';
-import { NX_ENTRY_POINT_PROVIDERS } from './ng-packagr-adjustments/ng-package/entry-point/entry-point.di';
-import { nxProvideOptions } from './ng-packagr-adjustments/ng-package/options.di';
-import {
-  NX_PACKAGE_PROVIDERS,
-  NX_PACKAGE_TRANSFORM,
-} from './ng-packagr-adjustments/ng-package/package.di';
+import { mapTo, switchMap } from 'rxjs/operators';
+import { getInstalledAngularVersionInfo } from '../utilities/angular-version-utils';
+import { parseRemappedTsConfigAndMergeDefaults } from '../utilities/typescript';
+import { getNgPackagrInstance } from './ng-packagr-adjustments/ng-packagr';
 import type { BuildAngularLibraryExecutorOptions } from './schema';
 
 async function initializeNgPackagr(
@@ -24,29 +20,25 @@ async function initializeNgPackagr(
   context: ExecutorContext,
   projectDependencies: DependentBuildableProjectNode[]
 ): Promise<NgPackagr> {
-  const packager = new (await import('ng-packagr')).NgPackagr([
-    ...NX_PACKAGE_PROVIDERS,
-    ...NX_ENTRY_POINT_PROVIDERS,
-    nxProvideOptions({
-      tailwindConfig: options.tailwindConfig,
-      watch: options.watch,
-    }),
-  ]);
-
-  packager.forProject(resolve(context.root, options.project));
-  packager.withBuildTransform(NX_PACKAGE_TRANSFORM.provide);
+  const ngPackagr = await getNgPackagrInstance();
+  ngPackagr.forProject(resolve(context.root, options.project));
 
   if (options.tsConfig) {
-    const tsConfigPath = createTmpTsConfig(
-      options.tsConfig,
+    const remappedTsConfigFilePath = createTmpTsConfig(
+      join(context.root, options.tsConfig),
       context.root,
-      context.workspace.projects[context.projectName].root,
+      context.projectsConfigurations.projects[context.projectName].root,
       projectDependencies
     );
-    packager.withTsConfig(tsConfigPath);
+    const tsConfig = await parseRemappedTsConfigAndMergeDefaults(
+      context.root,
+      options.tsConfig,
+      remappedTsConfigFilePath
+    );
+    ngPackagr.withTsConfig(tsConfig);
   }
 
-  return packager;
+  return ngPackagr;
 }
 
 /**
@@ -65,8 +57,17 @@ export function createLibraryExecutor(
     options: BuildAngularLibraryExecutorOptions,
     context: ExecutorContext
   ) {
+    const { major: angularMajorVersion, version: angularVersion } =
+      getInstalledAngularVersionInfo();
+    if (angularMajorVersion < 18 && options.poll !== undefined) {
+      throw new Error(
+        `The "poll" option requires Angular version 18.0.0 or greater. You are currently using version ${angularVersion}.`
+      );
+    }
+
     const { target, dependencies, topLevelDependencies } =
-      calculateProjectDependencies(
+      calculateProjectBuildableDependencies(
+        context.taskGraph,
         context.projectGraph,
         context.root,
         context.projectName,
@@ -84,28 +85,10 @@ export function createLibraryExecutor(
       return Promise.resolve({ success: false });
     }
 
-    function updatePackageJson(): void {
-      if (
-        topLevelDependencies.length > 0 &&
-        options.updateBuildableProjectDepsInPackageJson
-      ) {
-        updateBuildableProjectPackageJsonDependencies(
-          context.root,
-          context.projectName,
-          context.targetName,
-          context.configurationName,
-          target,
-          topLevelDependencies,
-          options.buildableProjectDepsInPackageJsonType
-        );
-      }
-    }
-
     if (options.watch) {
       return yield* eachValueFrom(
         from(initializeNgPackagr(options, context, dependencies)).pipe(
           switchMap((packagr) => packagr.watch()),
-          tap(() => updatePackageJson()),
           mapTo({ success: true })
         )
       );
@@ -114,7 +97,6 @@ export function createLibraryExecutor(
     return from(initializeNgPackagr(options, context, dependencies))
       .pipe(
         switchMap((packagr) => packagr.build()),
-        tap(() => updatePackageJson()),
         mapTo({ success: true })
       )
       .toPromise();

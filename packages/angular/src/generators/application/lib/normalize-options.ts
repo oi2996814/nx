@@ -1,80 +1,63 @@
+import { joinPathFragments, type Tree } from '@nx/devkit';
 import {
-  getWorkspacePath,
-  joinPathFragments,
-  readJson,
-  Tree,
-} from '@nrwl/devkit';
+  determineProjectNameAndRootOptions,
+  ensureRootProjectName,
+} from '@nx/devkit/src/generators/project-name-and-root-utils';
+import { Linter } from '@nx/eslint';
+import { E2eTestRunner, UnitTestRunner } from '../../../utils/test-runners';
 import type { Schema } from '../schema';
 import type { NormalizedSchema } from './normalized-schema';
 
-import { names, getWorkspaceLayout } from '@nrwl/devkit';
-import { E2eTestRunner, UnitTestRunner } from '../../../utils/test-runners';
-import { Linter } from '@nrwl/linter';
-import {
-  normalizeDirectory,
-  normalizePrefix,
-  normalizeProjectName,
-} from '../../utils/project';
-
-export function normalizeOptions(
+export async function normalizeOptions(
   host: Tree,
   options: Partial<Schema>
-): NormalizedSchema {
-  const { appsDir, npmScope, standaloneAsDefault } = getWorkspaceLayout(host);
+): Promise<NormalizedSchema> {
+  await ensureRootProjectName(options as Schema, 'application');
+  const { projectName: appProjectName, projectRoot: appProjectRoot } =
+    await determineProjectNameAndRootOptions(host, {
+      name: options.name,
+      projectType: 'application',
+      directory: options.directory,
+      rootProject: options.rootProject,
+    });
+  options.rootProject = appProjectRoot === '.';
 
-  const appDirectory = normalizeDirectory(options.name, options.directory);
-
-  let e2eProjectName = `${names(options.name).fileName}-e2e`;
-  const appProjectName = normalizeProjectName(options.name, options.directory);
-  if (options.e2eTestRunner !== 'cypress') {
-    e2eProjectName = `${appProjectName}-e2e`;
-  }
-
-  const appProjectRoot = joinPathFragments(appsDir, appDirectory);
-  const e2eProjectRoot = joinPathFragments(appsDir, `${appDirectory}-e2e`);
+  const e2eProjectName = options.rootProject ? 'e2e' : `${appProjectName}-e2e`;
+  const e2eProjectRoot = options.rootProject ? 'e2e' : `${appProjectRoot}-e2e`;
 
   const parsedTags = options.tags
     ? options.tags.split(',').map((s) => s.trim())
     : [];
 
-  const prefix = normalizePrefix(options.prefix, npmScope);
-
-  options.standaloneConfig = options.standaloneConfig ?? standaloneAsDefault;
-
-  // Determine the roots where @schematics/angular will place the projects
-  // This might not be where the projects actually end up
-  const workspaceJsonPath = getWorkspacePath(host);
-  let newProjectRoot = null;
-  if (workspaceJsonPath) {
-    ({ newProjectRoot } = readJson(host, workspaceJsonPath));
-  }
-  const ngCliSchematicAppRoot = newProjectRoot
-    ? `${newProjectRoot}/${appProjectName}`
-    : appProjectName;
-  const ngCliSchematicE2ERoot = newProjectRoot
-    ? `${newProjectRoot}/${e2eProjectName}`
-    : `${appProjectName}/e2e`;
+  const bundler = options.bundler ?? 'esbuild';
 
   // Set defaults and then overwrite with user options
   return {
     style: 'css',
-    routing: false,
+    routing: true,
     inlineStyle: false,
     inlineTemplate: false,
-    skipTests: false,
+    skipTests: options.unitTestRunner === UnitTestRunner.None,
     skipFormat: false,
-    unitTestRunner: UnitTestRunner.Jest,
-    e2eTestRunner: E2eTestRunner.Cypress,
+    e2eTestRunner: E2eTestRunner.Playwright,
     linter: Linter.EsLint,
     strict: true,
+    standalone: true,
+    directory: appProjectRoot,
     ...options,
-    prefix,
+    prefix: options.prefix || 'app',
     name: appProjectName,
     appProjectRoot,
+    appProjectSourceRoot: `${appProjectRoot}/src`,
     e2eProjectRoot,
     e2eProjectName,
     parsedTags,
-    ngCliSchematicAppRoot,
-    ngCliSchematicE2ERoot,
+    bundler,
+    outputPath: joinPathFragments(
+      'dist',
+      !options.rootProject ? appProjectRoot : appProjectName
+    ),
+    ssr: options.ssr ?? false,
+    unitTestRunner: options.unitTestRunner ?? UnitTestRunner.Jest,
   };
 }

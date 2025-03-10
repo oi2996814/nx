@@ -1,11 +1,8 @@
-import { Linter } from '@nrwl/linter';
+import { Linter, LinterType } from '@nx/eslint';
 import { E2eTestRunner, UnitTestRunner } from '../../utils/test-runners';
 import type { Styles } from '../utils/types';
 
 export interface GeneratorOptions {
-  skipInstall?: boolean;
-  npmScope?: string;
-  preserveAngularCliLayout?: boolean;
   defaultBase?: string;
 
   unitTestRunner?: UnitTestRunner;
@@ -14,6 +11,6 @@ export interface GeneratorOptions {
   skipInstall?: boolean;
   skipPostInstall?: boolean;
   style?: Styles;
-  linter?: Linter;
+  linter?: Linter | LinterType;
   skipPackageJson?: boolean;
 }

@@ -1,21 +1,21 @@
-`workspace.json`:
+`project.json`:
 
 ```json
-//...
-"frontend": {
-    "targets": {
-        //...
-        "ls-project-root": {
-            "executor": "nx:run-commands",
-            "options": {
-                "command": "ls apps/frontend/src"
-            }
-        }
+{
+  // ...
+  "targets": {
+    //...
+    "ls-project-root": {
+      "executor": "nx:run-commands",
+      "options": {
+        "command": "ls apps/frontend/src"
+      }
     }
+  }
 }
 ```
 
-```bash
+```shell
 nx run frontend:ls-project-root
 ```
 
@@ -83,13 +83,13 @@ You can use custom arguments in your scripts with `{args.[someFlag]}`:
 
 We run the above with:
 
-```bash
+```shell
 nx run frontend:create-script --args="--name=example"
 ```
 
 or simply with:
 
-```bash
+```shell
 nx run frontend:create-script --name=example
 ```
 
@@ -101,7 +101,7 @@ This is useful when you need to pass raw argument strings to your command.
 
 For example, when you run:
 
-```bash
+```shell
 nx run frontend:webpack --args="--config=example.config.js"
 ```
 
@@ -134,6 +134,16 @@ that sets the `forwardAllArgs` option to `false` as shown below:
 ```
 
 {% /tab %}
+{% tab label="Shorthand" %}
+When you only need to run a single command, you can use a shorthand for nx:run-commands:
+
+```json
+"webpack": {
+    "command": "webpack"
+}
+```
+
+{% /tab %}
 {% tab label="Custom done conditions" %}
 
 Normally, `run-commands` considers the commands done when all of them have finished running. If you don't need to wait until they're all done, you can set a special string that considers the commands finished the moment the string appears in `stdout` or `stderr`:
@@ -152,11 +162,35 @@ Normally, `run-commands` considers the commands done when all of them have finis
 }
 ```
 
-```bash
+```shell
 nx run frontend:finish-when-ready
 ```
 
 The above commands will finish immediately, instead of waiting for 5 seconds.
+
+When we have multiple commands running in parallel, there is a possibility that we want to wait for more than 1 string to appear in stdout or stderr.
+For example, imagine a case where we are running multiple commands to start multiple dev servers in parallel.
+
+```json
+"finish-when-multiple-ready": {
+    "executor": "nx:run-commands",
+    "options": {
+        "commands": [
+            "sleep $[ ( $RANDOM % 10 ) + 1 ] && echo 'READY1' && sleep 3600",
+            "sleep $[ ( $RANDOM % 10 ) + 1 ] && echo 'READY2' && sleep 3600",
+        ],
+        "readyWhen": ["READY1", "READY2"],
+        "parallel": true
+    }
+}
+```
+
+```shell
+nx run frontend:finish-when-multiple-ready
+```
+
+The above commands will finish as soon as both the 1st and the 2nd command echoed "READY" (between 1 and 10 seconds), instead of waiting for the extra hour.
+
 {% /tab %}
 {% tab label="Nx Affected" %}
 
@@ -164,7 +198,7 @@ The true power of `run-commands` comes from the fact that it runs through `nx`, 
 
 We can create some configurations to generate docs, and if run using `nx affected`, it will only generate documentation for the projects that have been changed:
 
-```bash
+```shell
 nx affected --target=generate-docs
 ```
 

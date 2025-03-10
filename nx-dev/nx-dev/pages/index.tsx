@@ -1,73 +1,71 @@
-import { AnnouncementBanner, Footer, Header } from '@nrwl/nx-dev/ui-common';
-import {
-  ExtensibleAndIntegrated,
-  GettingStarted,
-  Hero,
-  LogoCloud,
-  Migrate,
-  MigrationsAndCodeGeneration,
-  MonorepoStyles,
-  Newsletter,
-  NxIsFast,
-  NxStatistics,
-  Testimonials,
-} from '@nrwl/nx-dev/ui-home';
+import { CallToAction, DefaultLayout } from '@nx/nx-dev/ui-common';
 import { NextSeo } from 'next-seo';
+import {
+  CiForMonorepos,
+  Hero,
+  HetznerCloudTestimonial,
+  MonorepoAiSupport,
+  SmarterToolsForMonorepos,
+  Statistics,
+  TeamAndCommunity,
+  WorkBetterAchieveMoreShipQuicker,
+} from '@nx/nx-dev/ui-home';
+import { contactButton } from '../lib/components/headerCtaConfigs';
 
 export default function Index(): JSX.Element {
+  const headerCTAConfig = [contactButton];
+
   return (
     <>
       <NextSeo
-        title="Nx: Smart, Fast and Extensible Build System"
-        description="Next generation build system with first class monorepo support and powerful integrations."
+        title="Nx: Smart Monorepos · Fast CI"
+        description="Build system, optimized for monorepos, with plugins for popular frameworks and tools and advanced CI capabilities including caching and distribution."
         openGraph={{
           url: 'https://nx.dev',
-          title: 'Nx: Smart, Fast and Extensible Build System',
+          title: 'Nx: Smart Monorepos · Fast CI',
           description:
-            'Nx is a smart, fast and extensible build system which comes with first class monorepo support and powerful integrations.',
+            'Build system, optimized for monorepos, with AI-powered architectural awareness and advanced CI capabilities.',
           images: [
             {
-              url: 'https://nx.dev/images/nx-media.jpg',
-              width: 800,
-              height: 421,
-              alt: 'Nx: Smart, Fast and Extensible Build System',
-              type: 'image/jpeg',
+              url: 'https://nx.dev/socials/nx-media.png',
+              width: 1200,
+              height: 600,
+              alt: 'Nx: Smart Monorepos · Fast CI',
+              type: 'image/png',
             },
           ],
-          site_name: 'Nx',
+          siteName: 'Nx',
           type: 'website',
         }}
       />
-      <h1 className="sr-only">Next generation monorepo tool</h1>
-      <AnnouncementBanner />
-      <Header />
-      <main id="main" role="main">
-        <div className="w-full">
-          {/*HERO COMPONENT*/}
-          <Hero />
-          {/*LOGO CLOUD*/}
-          <LogoCloud />
-          {/*NX STATISTICS*/}
-          <NxStatistics />
-          {/*NX IS FAST*/}
-          <NxIsFast />
-          {/*MIGRATE*/}
-          <Migrate />
-          {/*MONOREPO STYLES*/}
-          <MonorepoStyles />
-          {/*EXTENSIBLE & INTEGRATED*/}
-          <ExtensibleAndIntegrated />
-          {/*AFFECTED & CODE GENERATION*/}
-          <MigrationsAndCodeGeneration />
-          {/*GETTING STARTED*/}
-          <GettingStarted />
-          {/*TESTIMONIALS*/}
-          <Testimonials />
-          {/*NEWSLETTER*/}
-          <Newsletter />
+      <h1 className="sr-only">Build system with advanced CI capabilities.</h1>
+      <DefaultLayout isHome headerCTAConfig={headerCTAConfig}>
+        <Hero />
+        <div className="mt-16 lg:-mt-32">
+          <Statistics />
         </div>
-      </main>
-      <Footer />
+        <div className="mt-32 lg:mt-56">
+          <HetznerCloudTestimonial />
+        </div>
+        <div className="mt-32 lg:mt-56">
+          <MonorepoAiSupport />
+        </div>
+        <div className="mt-32 lg:mt-56">
+          <CiForMonorepos />
+        </div>
+        <div className="mt-32 lg:mt-56">
+          <WorkBetterAchieveMoreShipQuicker />
+        </div>
+        <div className="mt-32 lg:mt-56">
+          <SmarterToolsForMonorepos />
+        </div>
+        <div className="mt-32 lg:mt-56">
+          <TeamAndCommunity />
+        </div>
+        <div className="mt-32 lg:mt-56">
+          <CallToAction />
+        </div>
+      </DefaultLayout>
     </>
   );
 }

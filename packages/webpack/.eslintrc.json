@@ -4,7 +4,15 @@
   "overrides": [
     {
       "files": ["*.ts", "*.tsx", "*.js", "*.jsx"],
-      "rules": {}
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "name": "chalk",
+            "message": "Please use `picocolors` in place of `chalk` for rendering terminal colors"
+          }
+        ]
+      }
     },
     {
       "files": ["*.ts", "*.tsx"],
@@ -18,7 +26,41 @@
       "files": ["./package.json", "./generators.json", "./executors.json"],
       "parser": "jsonc-eslint-parser",
       "rules": {
-        "@nrwl/nx/nx-plugin-checks": "error"
+        "@nx/nx-plugin-checks": "error"
+      }
+    },
+    {
+      "files": ["./package.json"],
+      "parser": "jsonc-eslint-parser",
+      "rules": {
+        "@nx/dependency-checks": [
+          "error",
+          {
+            "buildTargets": ["build-base"],
+            "ignoredDependencies": [
+              "nx",
+              "typescript",
+              "eslint",
+              // Used in require.resolve calls
+              "@babel/core",
+              "css-loader",
+              "less",
+              "less-loader",
+              "postcss-loader",
+              "sass",
+              "sass-embedded",
+              "sass-loader",
+              "style-loader",
+              "stylus",
+              "stylus-loader",
+              "source-map-loader",
+              "swc-loader",
+              "@swc/core",
+              "ts-loader",
+              "ajv"
+            ]
+          }
+        ]
       }
     }
   ]

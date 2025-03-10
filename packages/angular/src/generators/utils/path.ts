@@ -1,12 +1,5 @@
-import { joinPathFragments } from '@nrwl/devkit';
-import { basename, dirname, normalize, relative } from 'path';
-
-export function pathStartsWith(path1: string, path2: string) {
-  path1 = normalize(path1).replace(/\\/g, '/');
-  path2 = normalize(path2).replace(/\\/g, '/');
-
-  return path1.startsWith(path2);
-}
+import { joinPathFragments } from '@nx/devkit';
+import { basename, dirname, relative } from 'path';
 
 export function getRelativeImportToFile(
   sourceFilePath: string,

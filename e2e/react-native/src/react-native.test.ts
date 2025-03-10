@@ -1,160 +1,190 @@
+import { ChildProcess } from 'child_process';
 import {
-  checkFilesExist,
-  cleanupProject,
-  expectTestsPass,
-  newProject,
-  readJson,
   runCLI,
-  runCLIAsync,
+  cleanupProject,
+  newProject,
   uniq,
+  runCommandUntil,
+  killProcessAndPorts,
+  fileExists,
+  checkFilesExist,
+  runE2ETests,
   updateFile,
-} from '@nrwl/e2e/utils';
-import { join } from 'path';
+} from 'e2e/utils';
 
-describe('react native', () => {
+describe('@nx/react-native', () => {
   let proj: string;
+  let appName: string;
+  let libName: string;
+  let componentName: string;
 
-  beforeEach(() => (proj = newProject()));
-  afterEach(() => cleanupProject());
-
-  it('should test, create ios and android JS bundles', async () => {
-    const appName = uniq('my-app');
-    const libName = uniq('lib');
-    const componentName = uniq('component');
-
+  beforeAll(() => {
+    proj = newProject();
+    appName = uniq('app');
     runCLI(
-      `generate @nrwl/react-native:application ${appName} --install=false`
+      `generate @nx/react-native:app ${appName} --install=false --no-interactive --unitTestRunner=jest --linter=eslint`
     );
-    runCLI(`generate @nrwl/react-native:library ${libName}`);
+    libName = uniq('lib');
     runCLI(
-      `generate @nrwl/react-native:component ${componentName} --project=${libName} --export`
+      `generate @nx/react-native:lib ${libName} --buildable --no-interactive --unitTestRunner=jest --linter=eslint`
     );
-
-    updateFile(`apps/${appName}/src/app/App.tsx`, (content) => {
+    componentName = uniq('Component');
+    runCLI(
+      `generate @nx/react-native:component ${libName}/src/lib/${componentName}/${componentName} --export --no-interactive`
+    );
+    updateFile(`${appName}/src/app/App.tsx`, (content) => {
       let updated = `// eslint-disable-next-line @typescript-eslint/no-unused-vars\nimport {${componentName}} from '${proj}/${libName}';\n${content}`;
       return updated;
     });
-
-    expectTestsPass(await runCLIAsync(`test ${appName}`));
-    expectTestsPass(await runCLIAsync(`test ${libName}`));
-
-    const appLintResults = await runCLIAsync(`lint ${appName}`);
-    expect(appLintResults.combinedOutput).toContain('All files pass linting.');
-
-    const libLintResults = await runCLIAsync(`lint ${libName}`);
-    expect(libLintResults.combinedOutput).toContain('All files pass linting.');
-
-    const iosBundleResult = await runCLIAsync(
-      `bundle-ios ${appName} --sourcemapOutput=../../dist/apps/${appName}/ios/main.map`
-    );
-    expect(iosBundleResult.combinedOutput).toContain(
-      'Done writing bundle output'
-    );
-    expect(() => {
-      checkFilesExist(`dist/apps/${appName}/ios/main.jsbundle`);
-      checkFilesExist(`dist/apps/${appName}/ios/main.map`);
-    }).not.toThrow();
-
-    const androidBundleResult = await runCLIAsync(
-      `bundle-android ${appName} --sourcemapOutput=../../dist/apps/${appName}/android/main.map`
-    );
-    expect(androidBundleResult.combinedOutput).toContain(
-      'Done writing bundle output'
-    );
-    expect(() => {
-      checkFilesExist(`dist/apps/${appName}/android/main.jsbundle`);
-      checkFilesExist(`dist/apps/${appName}/android/main.map`);
-    }).not.toThrow();
-  }, 1000000);
-
-  it('should create storybook with application', async () => {
-    const appName = uniq('my-app');
-    runCLI(
-      `generate @nrwl/react-native:application ${appName} --install=false`
-    );
-    runCLI(
-      `generate @nrwl/react-native:storybook-configuration ${appName} --generateStories --no-interactive`
-    );
-    expect(() =>
-      checkFilesExist(
-        `.storybook/story-loader.js`,
-        `apps/${appName}/src/storybook/storybook.ts`,
-        `apps/${appName}/src/storybook/toggle-storybook.tsx`,
-        `apps/${appName}/src/app/App.stories.tsx`
-      )
-    ).not.toThrow();
-
-    await runCLIAsync(`storybook ${appName}`);
-    const result = readJson(join('apps', appName, 'package.json'));
-    expect(result).toMatchObject({
-      dependencies: {
-        '@storybook/addon-ondevice-actions': '*',
-        '@storybook/addon-ondevice-backgrounds': '*',
-        '@storybook/addon-ondevice-controls': '*',
-        '@storybook/addon-ondevice-notes': '*',
-      },
-    });
   });
 
-  it('should upgrade native for application', async () => {
-    const appName = uniq('my-app');
-    runCLI(
-      `generate @nrwl/react-native:application ${appName} --install=false`
-    );
+  afterAll(() => cleanupProject());
 
+  it('should test and lint', async () => {
+    expect(() => runCLI(`test ${appName}`)).not.toThrow();
+    expect(() => runCLI(`lint ${appName}`)).not.toThrow();
+  });
+
+  it('should bundle the app', async () => {
     expect(() =>
       runCLI(
-        `generate @nrwl/react-native:upgrade-native ${appName} --install=false`
+        `bundle ${appName} --platform=ios --bundle-output=dist.js --entry-file=src/main.tsx`
       )
     ).not.toThrow();
+    fileExists(` ${appName}/dist.js`);
+  }, 200_000);
+
+  it('should start the app', async () => {
+    let process: ChildProcess;
+    const port = 8081;
+
+    try {
+      process = await runCommandUntil(
+        `start ${appName} --no-interactive --port=${port}`,
+        (output) => {
+          return (
+            output.includes(`http://localhost:${port}`) ||
+            output.includes('Starting JS server...') ||
+            output.includes('Welcome to Metro')
+          );
+        }
+      );
+    } catch (err) {
+      console.error(err);
+    }
+
+    // port and process cleanup
+    if (process && process.pid) {
+      await killProcessAndPorts(process.pid, port);
+    }
+  });
+
+  it('should serve', async () => {
+    let process: ChildProcess;
+    const port = 8081;
+
+    try {
+      process = await runCommandUntil(
+        `serve ${appName} --port=${port}`,
+        (output) => {
+          return output.includes(`http://localhost:${port}`);
+        }
+      );
+    } catch (err) {
+      console.error(err);
+    }
+
+    // port and process cleanup
+    try {
+      if (process && process.pid) {
+        await killProcessAndPorts(process.pid, port);
+      }
+    } catch (err) {
+      expect(err).toBeFalsy();
+    }
+  });
+
+  it('should run e2e for cypress', async () => {
+    if (runE2ETests()) {
+      expect(() => runCLI(`e2e ${appName}-e2e`)).not.toThrow();
+
+      expect(() =>
+        runCLI(`e2e ${appName}-e2e --configuration=ci`)
+      ).not.toThrow();
+
+      // port and process cleanup
+      try {
+        if (process && process.pid) {
+          await killProcessAndPorts(process.pid, 4200);
+        }
+      } catch (err) {
+        expect(err).toBeFalsy();
+      }
+    }
+  });
+
+  it('should create storybook with application', async () => {
+    runCLI(
+      `generate @nx/react-native:storybook-configuration ${appName} --generateStories --no-interactive`
+    );
+    checkFilesExist(
+      `${appName}/.storybook/main.ts`,
+      `${appName}/src/app/App.stories.tsx`
+    );
+
+    runCLI(`build-storybook ${appName}`);
+    checkFilesExist(`${appName}/storybook-static/index.html`);
   });
 
   it('should build publishable library', async () => {
-    const libName = uniq('lib');
-    const componentName = uniq('component');
-
-    runCLI(
-      `generate @nrwl/react-native:library ${libName} --buildable --publishable --importPath=${proj}/${libName}`
-    );
-    runCLI(
-      `generate @nrwl/react-native:component ${componentName} --project=${libName} --export`
-    );
     expect(() => {
       runCLI(`build ${libName}`);
-      checkFilesExist(`dist/libs/${libName}/index.js`);
-      checkFilesExist(`dist/libs/${libName}/index.d.ts`);
+      checkFilesExist(
+        `dist/${libName}/index.esm.js`,
+        `dist/${libName}/src/index.d.ts`
+      );
     }).not.toThrow();
   });
 
-  it('sync npm dependencies for autolink', async () => {
-    const appName = uniq('my-app');
+  it('should create storybook with library', async () => {
     runCLI(
-      `generate @nrwl/react-native:application ${appName} --install=false`
+      `generate @nx/react-native:storybook-configuration ${libName} --generateStories --no-interactive`
     );
-    // Add npm package with native modules
-    updateFile(join('package.json'), (content) => {
-      const json = JSON.parse(content);
-      json.dependencies['react-native-image-picker'] = '1.0.0';
-      json.dependencies['react-native-gesture-handler'] = '1.0.0';
-      json.dependencies['react-native-safe-area-contex'] = '1.0.0';
-      return JSON.stringify(json, null, 2);
-    });
-    // Add import for Nx to pick up
-    updateFile(join('apps', appName, 'src/app/App.tsx'), (content) => {
-      return `import { launchImageLibrary } from 'react-native-image-picker';\n${content}`;
-    });
-
-    await runCLIAsync(
-      `sync-deps ${appName} --include=react-native-gesture-handler,react-native-safe-area-context`
+    checkFilesExist(
+      `${libName}/.storybook/main.ts`,
+      `${libName}/src/lib/${componentName}/${componentName}.stories.tsx`
     );
 
-    const result = readJson(join('apps', appName, 'package.json'));
-    expect(result).toMatchObject({
-      dependencies: {
-        'react-native-image-picker': '*',
-        'react-native-gesture-handler': '*',
-        'react-native-safe-area-context': '*',
-      },
-    });
+    runCLI(`build-storybook ${libName}`);
+    checkFilesExist(`${libName}/storybook-static/index.html`);
+  });
+
+  it('should run build with vite bundler and e2e with playwright', async () => {
+    const appName2 = uniq('my-app');
+    runCLI(
+      `generate @nx/react-native:application ${appName2} --directory=apps/${appName2} --bundler=vite --e2eTestRunner=playwright --install=false --no-interactive --unitTestRunner=jest --linter=eslint`
+    );
+    expect(() => runCLI(`build ${appName2}`)).not.toThrow();
+    if (runE2ETests()) {
+      expect(() => runCLI(`e2e ${appName2}-e2e`)).not.toThrow();
+      // port and process cleanup
+      try {
+        if (process && process.pid) {
+          await killProcessAndPorts(process.pid, 4200);
+        }
+      } catch (err) {
+        expect(err).toBeFalsy();
+      }
+    }
+
+    runCLI(
+      `generate @nx/react-native:storybook-configuration ${appName2} --generateStories --no-interactive`
+    );
+    checkFilesExist(
+      `apps/${appName2}/.storybook/main.ts`,
+      `apps/${appName2}/src/app/App.stories.tsx`
+    );
+    runCLI(`build-storybook ${appName2}`);
+    checkFilesExist(`apps/${appName2}/storybook-static/index.html`);
   });
 });

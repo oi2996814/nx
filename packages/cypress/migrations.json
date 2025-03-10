@@ -1,64 +1,61 @@
 {
-  "schematics": {
-    "update-8.1.0": {
-      "version": "8.1.0-beta.1",
-      "description": "Update cypress",
-      "factory": "./src/migrations/update-8-1-0/update-8-1-0"
-    },
-    "update-8.2.0": {
-      "version": "8.2.0-beta.1",
-      "description": "Update Cypress Config",
-      "factory": "./src/migrations/update-8-2-0/update-8-2-0"
-    },
-    "update-8.10.0": {
-      "version": "8.10.0-beta.1",
-      "description": "Update Cypress to 3.6.1",
-      "factory": "./src/migrations/update-8-10-0/update-8-10-0"
-    },
-    "update-8.12.0": {
-      "version": "8.12.0-beta.1",
-      "description": "Update Cypress to ^3.8.2",
-      "factory": "./src/migrations/update-8-12-0/update-8-12-0"
-    },
-    "add-cypress-eslint-plugin-9.4.0": {
-      "version": "9.4.0-beta.1",
-      "description": "Add Cypress ESLint plugin",
-      "factory": "./src/migrations/update-9-4-0/add-cypress-eslint-plugin-9-4-0"
-    },
-    "remove-typescript-plugin": {
+  "generators": {
+    "update-cypress-version-13-6-6": {
       "cli": "nx",
-      "version": "12.8.0-beta.0",
-      "description": "Remove Typescript Preprocessor Plugin",
-      "factory": "./src/migrations/update-12-8-0/remove-typescript-plugin"
+      "version": "18.1.0-beta.3",
+      "description": "Update to Cypress ^13.6.6 if the workspace is using Cypress v13 to ensure workspaces don't use v13.6.5 which has an issue when verifying Cypress.",
+      "implementation": "./src/migrations/update-18-1-0/update-cypress-version-13-6-6"
     },
-    "update-cypress-configs-preset": {
+    "update-19-6-0-update-ci-webserver-for-vite": {
       "cli": "nx",
-      "version": "14.6.1-beta.0",
-      "description": "Change Cypress e2e and component testing presets to use __filename instead of __dirname and include a devServerTarget for component testing.",
-      "factory": "./src/migrations/update-14-6-1/update-cypress-configs-presets"
-    },
-    "update-cypress-if-v10": {
-      "cli": "nx",
-      "version": "14.7.0-beta.0",
-      "description": "Update Cypress if using v10 to support latest component testing features",
-      "factory": "./src/migrations/update-14-7-0/update-cypress-version-if-10"
+      "version": "19.6.0-beta.4",
+      "description": "Update ciWebServerCommand to use static serve for the application.",
+      "implementation": "./src/migrations/update-19-6-0/update-ci-webserver-for-static-serve"
     }
   },
   "packageJsonUpdates": {
-    "8.10.0": {
-      "version": "8.10.0-beta.1",
+    "17.2.0-beta.2": {
+      "version": "17.2.0-beta.2",
       "packages": {
-        "cypress": {
-          "version": "3.6.1",
+        "vite": {
+          "version": "^5.0.0",
           "alwaysAddToPackageJson": false
         }
       }
     },
-    "8.12.0": {
-      "version": "8.12.0-beta.1",
+    "17.3.0": {
+      "version": "17.3.0-beta.3",
+      "packages": {
+        "@types/node": {
+          "version": "18.16.9",
+          "alwaysAddToPackageJson": false
+        }
+      }
+    },
+    "19.1.0": {
+      "version": "19.1.0-beta.0",
+      "requires": {
+        "cypress": "^13.0.0"
+      },
       "packages": {
         "cypress": {
-          "version": "^3.8.2",
+          "version": "^13.8.0",
+          "alwaysAddToPackageJson": false
+        },
+        "@cypress/webpack-dev-server": {
+          "version": "^3.8.0",
+          "alwaysAddToPackageJson": false
+        }
+      }
+    },
+    "19.4.1": {
+      "version": "19.4.1-beta.0",
+      "requires": {
+        "cypress": "^13.0.0"
+      },
+      "packages": {
+        "cypress": {
+          "version": "^13.13.0",
           "alwaysAddToPackageJson": false
         }
       }

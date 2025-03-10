@@ -1,8 +1,11 @@
 import {
   addProjectConfiguration,
+  joinPathFragments,
+  readNxJson,
   TargetConfiguration,
   Tree,
-} from '@nrwl/devkit';
+  writeJson,
+} from '@nx/devkit';
 import {
   expoBuildTarget,
   expoTestTarget,
@@ -10,47 +13,71 @@ import {
   reactNativeTestTarget,
 } from './get-targets';
 import { NormalizedSchema } from './normalize-options';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
 export function addProject(host: Tree, options: NormalizedSchema) {
-  addProjectConfiguration(host, options.projectName, {
-    root: options.projectRoot,
-    sourceRoot: `${options.projectRoot}/src`,
-    projectType: 'application',
-    targets: { ...getTargets(options) },
-    tags: [],
-    implicitDependencies: options.project ? [options.project] : undefined,
-  });
+  const nxJson = readNxJson(host);
+  const hasPlugin = nxJson.plugins?.some((p) =>
+    typeof p === 'string'
+      ? p === '@nx/detox/plugin'
+      : p.plugin === '@nx/detox/plugin'
+  );
+
+  if (isUsingTsSolutionSetup(host)) {
+    writeJson(host, joinPathFragments(options.e2eProjectRoot, 'package.json'), {
+      name: options.importPath,
+      version: '0.0.1',
+      private: true,
+      nx: {
+        name:
+          options.e2eProjectName !== options.importPath
+            ? options.e2eProjectName
+            : undefined,
+        targets: hasPlugin ? undefined : getTargets(options),
+        implicitDependencies: [options.appProject],
+      },
+    });
+  } else {
+    addProjectConfiguration(host, options.e2eProjectName, {
+      root: options.e2eProjectRoot,
+      sourceRoot: `${options.e2eProjectRoot}/src`,
+      projectType: 'application',
+      targets: hasPlugin ? {} : getTargets(options),
+      tags: [],
+      implicitDependencies: [options.appProject],
+    });
+  }
 }
 
 function getTargets(options: NormalizedSchema) {
   const targets: { [key: string]: TargetConfiguration } = {};
 
   targets['build-ios'] = {
-    executor: '@nrwl/detox:build',
+    executor: '@nx/detox:build',
     ...(options.framework === 'react-native'
       ? reactNativeBuildTarget('ios.sim')
       : expoBuildTarget('ios.sim')),
   };
 
   targets['test-ios'] = {
-    executor: '@nrwl/detox:test',
+    executor: '@nx/detox:test',
     ...(options.framework === 'react-native'
-      ? reactNativeTestTarget('ios.sim', options.name)
-      : expoTestTarget('ios.sim', options.name)),
+      ? reactNativeTestTarget('ios.sim', options.e2eProjectName)
+      : expoTestTarget('ios.sim', options.e2eProjectName)),
   };
 
   targets['build-android'] = {
-    executor: '@nrwl/detox:build',
+    executor: '@nx/detox:build',
     ...(options.framework === 'react-native'
       ? reactNativeBuildTarget('android.emu')
       : expoBuildTarget('android.emu')),
   };
 
   targets['test-android'] = {
-    executor: '@nrwl/detox:test',
+    executor: '@nx/detox:test',
     ...(options.framework === 'react-native'
-      ? reactNativeTestTarget('android.emu', options.name)
-      : expoTestTarget('android.emu', options.name)),
+      ? reactNativeTestTarget('android.emu', options.e2eProjectName)
+      : expoTestTarget('android.emu', options.e2eProjectName)),
   };
 
   return targets;

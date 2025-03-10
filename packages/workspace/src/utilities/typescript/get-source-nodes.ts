@@ -1,5 +1,8 @@
-import * as ts from 'typescript';
+import type * as ts from 'typescript';
 
+/**
+ * @deprecated This function will be removed from @nx/workspace in version 17. Prefer importing from @nx/js.
+ */
 export function getSourceNodes(sourceFile: ts.SourceFile): ts.Node[] {
   const nodes: ts.Node[] = [sourceFile];
   const result = [];
@@ -10,7 +13,7 @@ export function getSourceNodes(sourceFile: ts.SourceFile): ts.Node[] {
     if (node) {
       result.push(node);
       if (node.getChildCount(sourceFile) >= 0) {
-        nodes.unshift(...node.getChildren());
+        nodes.unshift(...node.getChildren(sourceFile));
       }
     }
   }

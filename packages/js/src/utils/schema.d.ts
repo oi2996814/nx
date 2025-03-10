@@ -1,37 +1,7 @@
-// nx-ignore-next-line
-const { Linter } = require('@nrwl/linter');
-import type {
-  AssetGlob,
-  FileInputOutput,
-} from '@nrwl/workspace/src/utilities/assets';
+import type { AssetGlob, FileInputOutput } from './assets/assets';
 import { TransformerEntry } from './typescript/types';
 
 export type Compiler = 'tsc' | 'swc';
-export type Bundler = 'none' | 'rollup' | 'esbuild' | 'webpack';
-
-export interface LibraryGeneratorSchema {
-  name: string;
-  directory?: string;
-  skipFormat?: boolean;
-  tags?: string;
-  simpleModuleName?: boolean;
-  skipTsConfig?: boolean;
-  includeBabelRc?: boolean;
-  unitTestRunner?: 'jest' | 'none';
-  linter?: Linter;
-  testEnvironment?: 'jsdom' | 'node';
-  importPath?: string;
-  js?: boolean;
-  pascalCaseFiles?: boolean;
-  strict?: boolean;
-  publishable?: boolean;
-  buildable?: boolean;
-  setParserOptionsProject?: boolean;
-  config?: 'workspace' | 'project' | 'npm-scripts';
-  compiler?: Compiler;
-  bundler?: Bundler;
-  skipTypeCheck?: boolean;
-}
 
 export interface ExecutorOptions {
   assets: Array<AssetGlob | string>;
@@ -39,20 +9,27 @@ export interface ExecutorOptions {
   rootDir?: string;
   outputPath: string;
   tsConfig: string;
+  generateExportsField?: boolean;
+  additionalEntryPoints?: string[];
   swcrc?: string;
   watch: boolean;
   clean?: boolean;
   transformers: TransformerEntry[];
-  updateBuildableProjectDepsInPackageJson?: boolean;
-  buildableProjectDepsInPackageJsonType?: 'dependencies' | 'peerDependencies';
+  external?: 'all' | 'none' | string[];
+  externalBuildTargets?: string[];
+  generateLockfile?: boolean;
+  stripLeadingPaths?: boolean;
+  generatePackageJson?: boolean;
 }
 
 export interface NormalizedExecutorOptions extends ExecutorOptions {
-  root?: string;
-  sourceRoot?: string;
+  rootDir: string;
   projectRoot: string;
   mainOutputPath: string;
+  generatePackageJson: boolean;
   files: Array<FileInputOutput>;
+  root?: string;
+  sourceRoot?: string;
 }
 
 export interface SwcExecutorOptions extends ExecutorOptions {
@@ -68,11 +45,18 @@ export interface SwcCliOptions {
   destPath: string;
   swcrcPath: string;
   swcCwd: string;
+  stripLeadingPaths: boolean;
 }
 
 export interface NormalizedSwcExecutorOptions
   extends NormalizedExecutorOptions {
+  originalProjectRoot: string;
   swcExclude: string[];
   skipTypeCheck: boolean;
   swcCliOptions: SwcCliOptions;
+  tmpSwcrcPath: string;
+  isTsSolutionSetup: boolean;
+  sourceRoot?: string;
+  // TODO(v21): remove inline feature
+  inline?: boolean;
 }

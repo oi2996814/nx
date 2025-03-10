@@ -1,67 +1,70 @@
+import { relative } from 'path';
 import {
-  addDependenciesToPackageJson,
   addProjectConfiguration,
-  applyChangesToString,
-  convertNxGenerator,
+  ensurePackage,
   formatFiles,
-  generateFiles,
   GeneratorCallback,
-  getProjects,
-  getWorkspaceLayout,
+  installPackagesTask,
   joinPathFragments,
-  names,
-  normalizePath,
-  offsetFromRoot,
-  toJS,
+  readProjectConfiguration,
+  runTasksInSerial,
   Tree,
-  updateJson,
-} from '@nrwl/devkit';
-import { getImportPath } from 'nx/src/utils/path';
-import { jestProjectGenerator } from '@nrwl/jest';
-import { swcCoreVersion } from '@nrwl/js/src/utils/versions';
-import { lintProjectGenerator } from '@nrwl/linter';
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
-import {
-  getRelativePathToRootTsConfig,
-  getRootTsConfigPathInTree,
-} from '@nrwl/workspace/src/utilities/typescript';
-import * as ts from 'typescript';
-import { assertValidStyle } from '../../utils/assertion';
-import {
-  addBrowserRouter,
-  addInitialRoutes,
-  addRoute,
-  findComponentImportPath,
-} from '../../utils/ast-utils';
-import {
-  createReactEslintJson,
-  extraEslintDependencies,
-} from '../../utils/lint';
-import {
-  reactDomVersion,
-  reactRouterDomVersion,
-  reactVersion,
-  typesReactRouterDomVersion,
-} from '../../utils/versions';
-import componentGenerator from '../component/component';
-import init from '../init/init';
-import { Schema } from './schema';
+  updateProjectConfiguration,
+  writeJson,
+} from '@nx/devkit';
+import { getRelativeCwd } from '@nx/devkit/src/generators/artifact-name-and-directory-utils';
+import { logShowProjectCommand } from '@nx/devkit/src/utils/log-show-project-command';
+import { addTsConfigPath, initGenerator as jsInitGenerator } from '@nx/js';
 
-export interface NormalizedSchema extends Schema {
-  name: string;
-  fileName: string;
-  projectRoot: string;
-  routePath: string;
-  projectDirectory: string;
-  parsedTags: string[];
-  appMain?: string;
-  appSourceRoot?: string;
-}
+import { nxVersion } from '../../utils/versions';
+import { maybeJs } from '../../utils/maybe-js';
+import componentGenerator from '../component/component';
+import initGenerator from '../init/init';
+import { Schema } from './schema';
+import { updateJestConfigContent } from '../../utils/jest-utils';
+import { normalizeOptions } from './lib/normalize-options';
+import { addRollupBuildTarget } from './lib/add-rollup-build-target';
+import { addLinting } from './lib/add-linting';
+import { updateAppRoutes } from './lib/update-app-routes';
+import { createFiles } from './lib/create-files';
+import { extractTsConfigBase } from '../../utils/create-ts-config';
+import { installCommonDependencies } from './lib/install-common-dependencies';
+import { setDefaults } from './lib/set-defaults';
+import {
+  addProjectToTsSolutionWorkspace,
+  updateTsconfigFiles,
+} from '@nx/js/src/utils/typescript/ts-solution-setup';
+import { determineEntryFields } from './lib/determine-entry-fields';
+import { sortPackageJsonFields } from '@nx/js/src/utils/package-json/sort-fields';
+import {
+  addReleaseConfigForNonTsSolution,
+  addReleaseConfigForTsSolution,
+  releaseTasks,
+} from '@nx/js/src/generators/library/utils/add-release-config';
+import type { PackageJson } from 'nx/src/utils/package-json';
 
 export async function libraryGenerator(host: Tree, schema: Schema) {
+  return await libraryGeneratorInternal(host, {
+    addPlugin: false,
+    ...schema,
+  });
+}
+
+export async function libraryGeneratorInternal(host: Tree, schema: Schema) {
   const tasks: GeneratorCallback[] = [];
 
-  const options = normalizeOptions(host, schema);
+  const jsInitTask = await jsInitGenerator(host, {
+    ...schema,
+    skipFormat: true,
+  });
+  tasks.push(jsInitTask);
+
+  const options = await normalizeOptions(host, schema);
+
+  if (options.isUsingTsSolutionConfig) {
+    addProjectToTsSolutionWorkspace(host, options.projectRoot);
+  }
+
   if (options.publishable === true && !schema.importPath) {
     throw new Error(
       `For publishable libs you have to provide a proper "--importPath" which needs to be a valid npm package name (e.g. my-awesome-lib or @myorg/my-lib)`
@@ -71,385 +74,247 @@ export async function libraryGenerator(host: Tree, schema: Schema) {
     options.style = 'none';
   }
 
-  const initTask = await init(host, {
+  const initTask = await initGenerator(host, {
     ...options,
-    e2eTestRunner: 'none',
     skipFormat: true,
   });
   tasks.push(initTask);
 
-  addProject(host, options);
+  if (options.isUsingTsSolutionConfig) {
+    const packageJson: PackageJson = {
+      name: options.importPath,
+      version: '0.0.1',
+      ...determineEntryFields(options),
+      files: options.publishable ? ['dist', '!**/*.tsbuildinfo'] : undefined,
+    };
+
+    if (options.name !== options.importPath) {
+      packageJson.nx = { name: options.name };
+    }
+    if (options.parsedTags?.length) {
+      packageJson.nx ??= {};
+      packageJson.nx.tags = options.parsedTags;
+    }
+
+    writeJson(host, `${options.projectRoot}/package.json`, packageJson);
+  } else {
+    addProjectConfiguration(host, options.name, {
+      root: options.projectRoot,
+      sourceRoot: joinPathFragments(options.projectRoot, 'src'),
+      projectType: 'library',
+      tags: options.parsedTags,
+      targets: {},
+    });
+  }
+
+  createFiles(host, options);
 
   const lintTask = await addLinting(host, options);
   tasks.push(lintTask);
 
-  createFiles(host, options);
-
-  if (!options.skipTsConfig) {
-    updateBaseTsConfig(host, options);
+  // Set up build target
+  if (options.buildable && options.bundler === 'vite') {
+    const { viteConfigurationGenerator, createOrEditViteConfig } =
+      ensurePackage<typeof import('@nx/vite')>('@nx/vite', nxVersion);
+    const viteTask = await viteConfigurationGenerator(host, {
+      uiFramework: 'react',
+      project: options.name,
+      newProject: true,
+      includeLib: true,
+      inSourceTests: options.inSourceTests,
+      includeVitest: options.unitTestRunner === 'vitest',
+      compiler: options.compiler,
+      skipFormat: true,
+      testEnvironment: 'jsdom',
+      addPlugin: options.addPlugin,
+    });
+    tasks.push(viteTask);
+    createOrEditViteConfig(
+      host,
+      {
+        project: options.name,
+        includeLib: true,
+        includeVitest: options.unitTestRunner === 'vitest',
+        inSourceTests: options.inSourceTests,
+        rollupOptionsExternal: [
+          "'react'",
+          "'react-dom'",
+          "'react/jsx-runtime'",
+        ],
+        imports: [
+          options.compiler === 'swc'
+            ? `import react from '@vitejs/plugin-react-swc'`
+            : `import react from '@vitejs/plugin-react'`,
+        ],
+        plugins: ['react()'],
+      },
+      false
+    );
+  } else if (options.buildable && options.bundler === 'rollup') {
+    const rollupTask = await addRollupBuildTarget(host, options);
+    tasks.push(rollupTask);
   }
 
+  // Set up test target
   if (options.unitTestRunner === 'jest') {
-    const jestTask = await jestProjectGenerator(host, {
+    const { configurationGenerator } = ensurePackage<typeof import('@nx/jest')>(
+      '@nx/jest',
+      nxVersion
+    );
+
+    const jestTask = await configurationGenerator(host, {
       ...options,
       project: options.name,
       setupFile: 'none',
       supportTsx: true,
       skipSerializers: true,
       compiler: options.compiler,
+      skipFormat: true,
     });
     tasks.push(jestTask);
+    const jestConfigPath = joinPathFragments(
+      options.projectRoot,
+      options.js ? 'jest.config.js' : 'jest.config.ts'
+    );
+    if (options.compiler === 'babel' && host.exists(jestConfigPath)) {
+      const updatedContent = updateJestConfigContent(
+        host.read(jestConfigPath, 'utf-8')
+      );
+      host.write(jestConfigPath, updatedContent);
+    }
+  } else if (
+    options.unitTestRunner === 'vitest' &&
+    options.bundler !== 'vite' // tests are already configured if bundler is vite
+  ) {
+    const { vitestGenerator, createOrEditViteConfig } = ensurePackage<
+      typeof import('@nx/vite')
+    >('@nx/vite', nxVersion);
+    const vitestTask = await vitestGenerator(host, {
+      uiFramework: 'react',
+      project: options.name,
+      coverageProvider: 'v8',
+      inSourceTests: options.inSourceTests,
+      skipFormat: true,
+      testEnvironment: 'jsdom',
+      addPlugin: options.addPlugin,
+      compiler: options.compiler,
+    });
+    tasks.push(vitestTask);
+    createOrEditViteConfig(
+      host,
+      {
+        project: options.name,
+        includeLib: true,
+        includeVitest: true,
+        inSourceTests: options.inSourceTests,
+        rollupOptionsExternal: [
+          "'react'",
+          "'react-dom'",
+          "'react/jsx-runtime'",
+        ],
+        imports: [
+          options.compiler === 'swc'
+            ? `import react from '@vitejs/plugin-react-swc'`
+            : `import react from '@vitejs/plugin-react'`,
+        ],
+        plugins: ['react()'],
+      },
+      true
+    );
   }
 
   if (options.component) {
+    const relativeCwd = getRelativeCwd();
+    const path = joinPathFragments(
+      options.projectRoot,
+      'src/lib',
+      options.fileName
+    );
     const componentTask = await componentGenerator(host, {
-      name: options.name,
-      project: options.name,
-      flat: true,
+      path: relativeCwd ? relative(relativeCwd, path) : path,
       style: options.style,
-      skipTests: options.unitTestRunner === 'none',
+      skipTests:
+        options.unitTestRunner === 'none' ||
+        (options.unitTestRunner === 'vitest' && options.inSourceTests == true),
       export: true,
       routing: options.routing,
       js: options.js,
-      pascalCaseFiles: options.pascalCaseFiles,
+      inSourceTests: options.inSourceTests,
+      skipFormat: true,
+      globalCss: options.globalCss,
     });
     tasks.push(componentTask);
   }
 
   if (options.publishable || options.buildable) {
-    updateLibPackageNpmScope(host, options);
+    const projectConfiguration = readProjectConfiguration(host, options.name);
+    if (options.isUsingTsSolutionConfig) {
+      await addReleaseConfigForTsSolution(
+        host,
+        options.name,
+        projectConfiguration
+      );
+    } else {
+      await addReleaseConfigForNonTsSolution(
+        host,
+        options.name,
+        projectConfiguration
+      );
+    }
+    updateProjectConfiguration(host, options.name, projectConfiguration);
+    tasks.push(await releaseTasks(host));
   }
 
-  const installTask = await addDependenciesToPackageJson(
-    host,
-    {
-      react: reactVersion,
-      'react-dom': reactDomVersion,
-    },
-    options.compiler === 'swc' ? { '@swc/core': swcCoreVersion } : {}
-  );
-  tasks.push(installTask);
+  if (!options.skipPackageJson) {
+    const installReactTask = await installCommonDependencies(host, options);
+    tasks.push(installReactTask);
+  }
 
   const routeTask = updateAppRoutes(host, options);
   tasks.push(routeTask);
+  setDefaults(host, options);
+
+  extractTsConfigBase(host);
+
+  if (!options.skipTsConfig && !options.isUsingTsSolutionConfig) {
+    addTsConfigPath(host, options.importPath, [
+      maybeJs(
+        options,
+        joinPathFragments(options.projectRoot, './src/index.ts')
+      ),
+    ]);
+  }
+
+  updateTsconfigFiles(
+    host,
+    options.projectRoot,
+    'tsconfig.lib.json',
+    {
+      jsx: 'react-jsx',
+      module: 'esnext',
+      moduleResolution: 'bundler',
+    },
+    options.linter === 'eslint'
+      ? ['eslint.config.js', 'eslint.config.cjs', 'eslint.config.mjs']
+      : undefined
+  );
+
+  sortPackageJsonFields(host, options.projectRoot);
 
   if (!options.skipFormat) {
     await formatFiles(host);
   }
 
+  // Always run install to link packages.
+  if (options.isUsingTsSolutionConfig) {
+    tasks.push(() => installPackagesTask(host, true));
+  }
+
+  tasks.push(() => {
+    logShowProjectCommand(options.name);
+  });
+
   return runTasksInSerial(...tasks);
 }
 
-async function addLinting(host: Tree, options: NormalizedSchema) {
-  const lintTask = await lintProjectGenerator(host, {
-    linter: options.linter,
-    project: options.name,
-    tsConfigPaths: [
-      joinPathFragments(options.projectRoot, 'tsconfig.lib.json'),
-    ],
-    unitTestRunner: options.unitTestRunner,
-    eslintFilePatterns: [`${options.projectRoot}/**/*.{ts,tsx,js,jsx}`],
-    skipFormat: true,
-  });
-
-  const reactEslintJson = createReactEslintJson(
-    options.projectRoot,
-    options.setParserOptionsProject
-  );
-
-  updateJson(
-    host,
-    joinPathFragments(options.projectRoot, '.eslintrc.json'),
-    () => reactEslintJson
-  );
-
-  const installTask = await addDependenciesToPackageJson(
-    host,
-    extraEslintDependencies.dependencies,
-    extraEslintDependencies.devDependencies
-  );
-
-  return runTasksInSerial(lintTask, installTask);
-}
-
-function addProject(host: Tree, options: NormalizedSchema) {
-  const targets: { [key: string]: any } = {};
-
-  if (options.publishable || options.buildable) {
-    const { libsDir } = getWorkspaceLayout(host);
-    const external: string[] = [];
-
-    if (options.style === '@emotion/styled') {
-      external.push('@emotion/react/jsx-runtime');
-    } else {
-      external.push('react/jsx-runtime');
-    }
-
-    targets.build = {
-      builder: '@nrwl/web:rollup',
-      outputs: ['{options.outputPath}'],
-      options: {
-        outputPath: `dist/${libsDir}/${options.projectDirectory}`,
-        tsConfig: `${options.projectRoot}/tsconfig.lib.json`,
-        project: `${options.projectRoot}/package.json`,
-        entryFile: maybeJs(options, `${options.projectRoot}/src/index.ts`),
-        external,
-        rollupConfig: `@nrwl/react/plugins/bundle-rollup`,
-        compiler: options.compiler ?? 'babel',
-        assets: [
-          {
-            glob: `${options.projectRoot}/README.md`,
-            input: '.',
-            output: '.',
-          },
-        ],
-      },
-    };
-  }
-
-  addProjectConfiguration(
-    host,
-    options.name,
-    {
-      root: options.projectRoot,
-      sourceRoot: joinPathFragments(options.projectRoot, 'src'),
-      projectType: 'library',
-      tags: options.parsedTags,
-      targets,
-    },
-    options.standaloneConfig
-  );
-}
-
-function updateTsConfig(tree: Tree, options: NormalizedSchema) {
-  updateJson(
-    tree,
-    joinPathFragments(options.projectRoot, 'tsconfig.json'),
-    (json) => {
-      if (options.strict) {
-        json.compilerOptions = {
-          ...json.compilerOptions,
-          forceConsistentCasingInFileNames: true,
-          strict: true,
-          noImplicitOverride: true,
-          noPropertyAccessFromIndexSignature: true,
-          noImplicitReturns: true,
-          noFallthroughCasesInSwitch: true,
-        };
-      }
-
-      return json;
-    }
-  );
-}
-
-function updateBaseTsConfig(host: Tree, options: NormalizedSchema) {
-  updateJson(host, getRootTsConfigPathInTree(host), (json) => {
-    const c = json.compilerOptions;
-    c.paths = c.paths || {};
-    delete c.paths[options.name];
-
-    if (c.paths[options.importPath]) {
-      throw new Error(
-        `You already have a library using the import path "${options.importPath}". Make sure to specify a unique one.`
-      );
-    }
-
-    const { libsDir } = getWorkspaceLayout(host);
-
-    c.paths[options.importPath] = [
-      maybeJs(
-        options,
-        joinPathFragments(libsDir, `${options.projectDirectory}/src/index.ts`)
-      ),
-    ];
-
-    return json;
-  });
-}
-
-function createFiles(host: Tree, options: NormalizedSchema) {
-  generateFiles(
-    host,
-    joinPathFragments(__dirname, './files/lib'),
-    options.projectRoot,
-    {
-      ...options,
-      ...names(options.name),
-      tmpl: '',
-      offsetFromRoot: offsetFromRoot(options.projectRoot),
-      rootTsConfigPath: getRelativePathToRootTsConfig(
-        host,
-        options.projectRoot
-      ),
-    }
-  );
-
-  if (!options.publishable && !options.buildable) {
-    host.delete(`${options.projectRoot}/package.json`);
-  }
-
-  if (options.js) {
-    toJS(host);
-  }
-
-  updateTsConfig(host, options);
-}
-
-function updateAppRoutes(host: Tree, options: NormalizedSchema) {
-  if (!options.appMain || !options.appSourceRoot) {
-    return () => {};
-  }
-
-  const { content, source } = readComponent(host, options.appMain);
-
-  const componentImportPath = findComponentImportPath('App', source);
-
-  if (!componentImportPath) {
-    throw new Error(
-      `Could not find App component in ${options.appMain} (Hint: you can omit --appProject, or make sure App exists)`
-    );
-  }
-
-  const appComponentPath = joinPathFragments(
-    options.appSourceRoot,
-    maybeJs(options, `${componentImportPath}.tsx`)
-  );
-
-  const routerTask = addDependenciesToPackageJson(
-    host,
-    { 'react-router-dom': reactRouterDomVersion },
-    { '@types/react-router-dom': typesReactRouterDomVersion }
-  );
-
-  // addBrowserRouterToMain
-  const isRouterPresent = content.match(/react-router-dom/);
-  if (!isRouterPresent) {
-    const changes = applyChangesToString(
-      content,
-      addBrowserRouter(options.appMain, source)
-    );
-    host.write(options.appMain, changes);
-  }
-
-  // addInitialAppRoutes
-  {
-    const { content: componentContent, source: componentSource } =
-      readComponent(host, appComponentPath);
-    const isComponentRouterPresent = componentContent.match(/react-router-dom/);
-    if (!isComponentRouterPresent) {
-      const changes = applyChangesToString(
-        componentContent,
-        addInitialRoutes(appComponentPath, componentSource)
-      );
-      host.write(appComponentPath, changes);
-    }
-  }
-
-  // addNewAppRoute
-  {
-    const { content: componentContent, source: componentSource } =
-      readComponent(host, appComponentPath);
-    const { npmScope } = getWorkspaceLayout(host);
-    const changes = applyChangesToString(
-      componentContent,
-      addRoute(appComponentPath, componentSource, {
-        routePath: options.routePath,
-        componentName: names(options.name).className,
-        moduleName: getImportPath(npmScope, options.projectDirectory),
-      })
-    );
-    host.write(appComponentPath, changes);
-  }
-
-  return routerTask;
-}
-
-function readComponent(
-  host: Tree,
-  path: string
-): { content: string; source: ts.SourceFile } {
-  if (!host.exists(path)) {
-    throw new Error(`Cannot find ${path}`);
-  }
-
-  const content = host.read(path, 'utf-8');
-
-  const source = ts.createSourceFile(
-    path,
-    content,
-    ts.ScriptTarget.Latest,
-    true
-  );
-
-  return { content, source };
-}
-
-function normalizeOptions(host: Tree, options: Schema): NormalizedSchema {
-  const name = names(options.name).fileName;
-  const projectDirectory = options.directory
-    ? `${names(options.directory).fileName}/${name}`
-    : name;
-
-  const projectName = projectDirectory.replace(new RegExp('/', 'g'), '-');
-  const fileName = projectName;
-  const { libsDir, npmScope } = getWorkspaceLayout(host);
-  const projectRoot = joinPathFragments(libsDir, projectDirectory);
-
-  const parsedTags = options.tags
-    ? options.tags.split(',').map((s) => s.trim())
-    : [];
-
-  const importPath =
-    options.importPath || getImportPath(npmScope, projectDirectory);
-
-  const normalized: NormalizedSchema = {
-    ...options,
-    fileName,
-    routePath: `/${name}`,
-    name: projectName,
-    projectRoot,
-    projectDirectory,
-    parsedTags,
-    importPath,
-  };
-
-  if (options.appProject) {
-    const appProjectConfig = getProjects(host).get(options.appProject);
-
-    if (appProjectConfig.projectType !== 'application') {
-      throw new Error(
-        `appProject expected type of "application" but got "${appProjectConfig.projectType}"`
-      );
-    }
-
-    try {
-      normalized.appMain = appProjectConfig.targets.build.options.main;
-      normalized.appSourceRoot = normalizePath(appProjectConfig.sourceRoot);
-    } catch (e) {
-      throw new Error(
-        `Could not locate project main for ${options.appProject}`
-      );
-    }
-  }
-
-  assertValidStyle(normalized.style);
-
-  return normalized;
-}
-
-function updateLibPackageNpmScope(host: Tree, options: NormalizedSchema) {
-  return updateJson(host, `${options.projectRoot}/package.json`, (json) => {
-    json.name = options.importPath;
-    return json;
-  });
-}
-
-function maybeJs(options: NormalizedSchema, path: string): string {
-  return options.js && (path.endsWith('.ts') || path.endsWith('.tsx'))
-    ? path.replace(/\.tsx?$/, '.js')
-    : path;
-}
-
 export default libraryGenerator;
-export const librarySchematic = convertNxGenerator(libraryGenerator);

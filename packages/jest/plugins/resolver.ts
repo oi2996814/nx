@@ -1,16 +1,6 @@
-import { dirname, extname } from 'path';
+import { dirname, extname, join, resolve } from 'path';
 import { resolve as resolveExports } from 'resolve.exports';
-import type defaultResolver from 'jest-resolve/build/defaultResolver';
-
-interface ResolveOptions {
-  rootDir: string;
-  basedir: string;
-  paths: string[];
-  moduleDirectory: string[];
-  browser: boolean;
-  extensions: string[];
-  defaultResolver: typeof defaultResolver;
-}
+import type { ResolverOptions } from 'jest-resolve';
 
 let compilerSetup;
 let ts;
@@ -38,15 +28,9 @@ function getCompilerSetup(rootDir: string) {
   return { compilerOptions, host };
 }
 
-module.exports = function (path: string, options: ResolveOptions) {
+module.exports = function (path: string, options: ResolverOptions) {
   const ext = extname(path);
-  if (
-    ext === '.css' ||
-    ext === '.scss' ||
-    ext === '.sass' ||
-    ext === '.less' ||
-    ext === '.styl'
-  ) {
+  if (ext === '.css' || ext === '.scss' || ext === '.sass' || ext === '.less') {
     return require.resolve('identity-obj-proxy');
   }
   try {
@@ -66,14 +50,15 @@ module.exports = function (path: string, options: ResolveOptions) {
             return path;
           }
 
-          return resolveExports(pkg, path) || path;
+          return resolveExports(pkg, path)?.[0] || path;
         },
       });
     }
   } catch (e) {
     if (
       path === 'jest-sequencer-@jest/test-sequencer' ||
-      path === '@jest/test-sequencer'
+      path === '@jest/test-sequencer' ||
+      path.startsWith('jest-sequencer-')
     ) {
       return;
     }
@@ -81,7 +66,15 @@ module.exports = function (path: string, options: ResolveOptions) {
     ts = ts || require('typescript');
     compilerSetup = compilerSetup || getCompilerSetup(options.rootDir);
     const { compilerOptions, host } = compilerSetup;
-    return ts.resolveModuleName(path, options.basedir, compilerOptions, host)
-      .resolvedModule.resolvedFileName;
+    const resolvedFileName = ts.resolveModuleName(
+      path,
+      join(options.basedir, 'fake-placeholder.ts'),
+      compilerOptions,
+      host
+    ).resolvedModule?.resolvedFileName;
+    if (!resolvedFileName) {
+      throw new Error(`Could not resolve ${path}`);
+    }
+    return resolve(options.rootDir, resolvedFileName);
   }
 };

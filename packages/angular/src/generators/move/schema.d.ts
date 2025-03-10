@@ -4,4 +4,5 @@ export interface Schema {
   updateImportPath: boolean;
   importPath?: string;
   skipFormat?: boolean;
+  newProjectName?: string;
 }

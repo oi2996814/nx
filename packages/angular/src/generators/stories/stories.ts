@@ -1,11 +1,13 @@
 import {
+  addDependenciesToPackageJson,
+  ensurePackage,
   formatFiles,
+  GeneratorCallback,
   joinPathFragments,
-  logger,
   readProjectConfiguration,
+  runTasksInSerial,
   Tree,
-} from '@nrwl/devkit';
-import componentCypressSpecGenerator from '../component-cypress-spec/component-cypress-spec';
+} from '@nx/devkit';
 import componentStoryGenerator from '../component-story/component-story';
 import type { ComponentInfo } from '../utils/storybook-ast/component-info';
 import {
@@ -13,19 +15,16 @@ import {
   getStandaloneComponentsInfo,
 } from '../utils/storybook-ast/component-info';
 import { getProjectEntryPoints } from '../utils/storybook-ast/entry-point';
-import { getE2EProject } from './lib/get-e2e-project';
 import { getModuleFilePaths } from '../utils/storybook-ast/module-info';
 import type { StoriesGeneratorOptions } from './schema';
-import minimatch = require('minimatch');
+import { minimatch } from 'minimatch';
+import { nxVersion } from '../../utils/versions';
 
-export function angularStoriesGenerator(
+export async function angularStoriesGenerator(
   tree: Tree,
   options: StoriesGeneratorOptions
-): void {
-  const e2eProjectName = options.cypressProject ?? `${options.name}-e2e`;
-  const e2eProject = getE2EProject(tree, e2eProjectName);
+): Promise<GeneratorCallback> {
   const entryPoints = getProjectEntryPoints(tree, options.name);
-  const { root } = readProjectConfiguration(tree, options.name);
   const componentsInfo: ComponentInfo[] = [];
   for (const entryPoint of entryPoints) {
     const moduleFilePaths = getModuleFilePaths(tree, entryPoint);
@@ -35,57 +34,53 @@ export function angularStoriesGenerator(
     );
   }
 
-  if (options.generateCypressSpecs && !e2eProject) {
-    logger.info(
-      `There was no e2e project "${e2eProjectName}" found, so cypress specs will not be generated. Pass "--cypressProject" to specify a different e2e project name.`
+  const componentInfos = componentsInfo.filter(
+    (f) =>
+      !options.ignorePaths?.some((pattern) => {
+        const shouldIgnorePath = minimatch(
+          joinPathFragments(
+            f.moduleFolderPath,
+            f.path,
+            `${f.componentFileName}.ts`
+          ),
+          pattern
+        );
+        return shouldIgnorePath;
+      })
+  );
+
+  for (const info of componentInfos) {
+    if (info === undefined) {
+      continue;
+    }
+
+    await componentStoryGenerator(tree, {
+      projectPath: info.moduleFolderPath,
+      componentName: info.name,
+      componentPath: info.path,
+      componentFileName: info.componentFileName,
+      interactionTests: options.interactionTests ?? true,
+      skipFormat: true,
+    });
+  }
+  const tasks: GeneratorCallback[] = [];
+
+  if (options.interactionTests) {
+    const { interactionTestsDependencies, addInteractionsInAddons } =
+      ensurePackage<typeof import('@nx/storybook')>('@nx/storybook', nxVersion);
+
+    const projectConfiguration = readProjectConfiguration(tree, options.name);
+    addInteractionsInAddons(tree, projectConfiguration);
+
+    tasks.push(
+      addDependenciesToPackageJson(tree, {}, interactionTestsDependencies())
     );
   }
 
-  componentsInfo
-    .filter(
-      (f) =>
-        !options.ignorePaths?.some((pattern) => {
-          const shouldIgnorePath = minimatch(
-            joinPathFragments(
-              f.moduleFolderPath,
-              f.path,
-              `${f.componentFileName}.ts`
-            ),
-            pattern
-          );
-          return shouldIgnorePath;
-        })
-    )
-    ?.forEach((info) => {
-      if (info === undefined) {
-        return;
-      }
-
-      componentStoryGenerator(tree, {
-        projectPath: info.moduleFolderPath,
-        componentName: info.name,
-        componentPath: info.path,
-        componentFileName: info.componentFileName,
-        skipFormat: false,
-      });
-
-      if (options.generateCypressSpecs && e2eProject) {
-        componentCypressSpecGenerator(tree, {
-          projectName: options.name,
-          projectPath: info.moduleFolderPath,
-          cypressProject: options.cypressProject,
-          componentName: info.name,
-          componentPath: info.path,
-          componentFileName: info.componentFileName,
-          specDirectory: joinPathFragments(info.entryPointName, info.path),
-          skipFormat: false,
-        });
-      }
-    });
-
   if (!options.skipFormat) {
-    formatFiles(tree);
+    await formatFiles(tree);
   }
+  return runTasksInSerial(...tasks);
 }
 
 export default angularStoriesGenerator;

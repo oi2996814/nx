@@ -1,26 +1,47 @@
 import {
   formatFiles,
-  generateFiles,
   getProjects,
   joinPathFragments,
-  names,
-  readProjectConfiguration,
+  runTasksInSerial,
   Tree,
-} from '@nrwl/devkit';
-import type { Schema } from './schema';
+} from '@nx/devkit';
+import {
+  determineProjectNameAndRootOptions,
+  ensureRootProjectName,
+} from '@nx/devkit/src/generators/project-name-and-root-utils';
+import { isValidVariable } from '@nx/js';
+import { assertNotUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
+import { E2eTestRunner } from '../../utils/test-runners';
 import applicationGenerator from '../application/application';
 import remoteGenerator from '../remote/remote';
-import { normalizeProjectName } from '../utils/project';
-import * as ts from 'typescript';
-import { addRoute } from '../../utils/nx-devkit/route-utils';
 import { setupMf } from '../setup-mf/setup-mf';
-import { E2eTestRunner } from '../../utils/test-runners';
+import { addMfEnvToTargetDefaultInputs } from '../utils/add-mf-env-to-inputs';
+import { updateSsrSetup } from './lib';
+import type { Schema } from './schema';
 
-export default async function host(tree: Tree, options: Schema) {
+export async function host(tree: Tree, schema: Schema) {
+  assertNotUsingTsSolutionSetup(tree, 'angular', 'host');
+
+  const { typescriptConfiguration = true, ...options }: Schema = schema;
+  options.standalone = options.standalone ?? true;
+
   const projects = getProjects(tree);
 
   const remotesToGenerate: string[] = [];
   const remotesToIntegrate: string[] = [];
+
+  // Check to see if remotes are provided and also check if --dynamic is provided
+  // if both are check that the remotes are valid names else throw an error.
+  if (options.dynamic && options.remotes?.length > 0) {
+    options.remotes.forEach((remote) => {
+      const isValidRemote = isValidVariable(remote);
+      if (!isValidRemote.isValid) {
+        throw new Error(
+          `Invalid remote name provided: ${remote}. ${isValidRemote.message}`
+        );
+      }
+    });
+  }
 
   if (options.remotes && options.remotes.length > 0) {
     options.remotes.forEach((remote) => {
@@ -32,19 +53,27 @@ export default async function host(tree: Tree, options: Schema) {
     });
   }
 
-  const appName = normalizeProjectName(options.name, options.directory);
+  await ensureRootProjectName(options, 'application');
+  const { projectName: hostProjectName, projectRoot: appRoot } =
+    await determineProjectNameAndRootOptions(tree, {
+      name: options.name,
+      projectType: 'application',
+      directory: options.directory,
+    });
 
-  const installTask = await applicationGenerator(tree, {
+  const appInstallTask = await applicationGenerator(tree, {
     ...options,
+    standalone: options.standalone,
     routing: true,
     port: 4200,
     skipFormat: true,
+    bundler: 'webpack',
   });
 
   const skipE2E =
     !options.e2eTestRunner || options.e2eTestRunner === E2eTestRunner.None;
   await setupMf(tree, {
-    appName,
+    appName: hostProjectName,
     mfType: 'host',
     routing: true,
     port: 4200,
@@ -53,92 +82,48 @@ export default async function host(tree: Tree, options: Schema) {
     skipPackageJson: options.skipPackageJson,
     skipFormat: true,
     skipE2E,
-    e2eProjectName: skipE2E ? undefined : `${appName}-e2e`,
+    e2eProjectName: skipE2E ? undefined : `${hostProjectName}-e2e`,
+    prefix: options.prefix,
+    typescriptConfiguration,
+    standalone: options.standalone,
+    setParserOptionsProject: options.setParserOptionsProject,
   });
 
+  let installTasks = [appInstallTask];
+  if (options.ssr) {
+    let ssrInstallTask = await updateSsrSetup(
+      tree,
+      options,
+      hostProjectName,
+      typescriptConfiguration
+    );
+    installTasks.push(ssrInstallTask);
+  }
+
   for (const remote of remotesToGenerate) {
+    const remoteDirectory = options.directory
+      ? joinPathFragments(options.directory, '..', remote)
+      : appRoot === '.'
+      ? remote
+      : joinPathFragments(appRoot, '..', remote);
     await remoteGenerator(tree, {
       ...options,
       name: remote,
-      host: appName,
+      directory: remoteDirectory,
+      host: hostProjectName,
       skipFormat: true,
       standalone: options.standalone,
+      typescriptConfiguration,
     });
   }
 
-  routeToNxWelcome(tree, options);
+  addMfEnvToTargetDefaultInputs(tree);
 
   if (!options.skipFormat) {
     await formatFiles(tree);
   }
 
-  return installTask;
+  return runTasksInSerial(...installTasks);
 }
 
-function routeToNxWelcome(tree: Tree, options: Schema) {
-  const { sourceRoot } = readProjectConfiguration(
-    tree,
-    normalizeProjectName(options.name, options.directory)
-  );
-
-  const remoteRoutes =
-    options.remotes && Array.isArray(options.remotes)
-      ? options.remotes.reduce(
-          (routes, remote) =>
-            `${routes}\n<li><a routerLink='${normalizeProjectName(
-              remote,
-              options.directory
-            )}'>${names(remote).className}</a></li>`,
-          ''
-        )
-      : '';
-
-  tree.write(
-    joinPathFragments(sourceRoot, 'app/app.component.html'),
-    `<ul class="remote-menu">
-<li><a routerLink='/'>Home</a></li>
-${remoteRoutes}
-</ul>
-<router-outlet></router-outlet>
-`
-  );
-
-  const pathToHostRootRoutingFile = joinPathFragments(
-    sourceRoot,
-    'app/app.routes.ts'
-  );
-
-  const hostRootRoutingFile = tree.read(pathToHostRootRoutingFile, 'utf-8');
-
-  let sourceFile = ts.createSourceFile(
-    pathToHostRootRoutingFile,
-    hostRootRoutingFile,
-    ts.ScriptTarget.Latest,
-    true
-  );
-
-  addRoute(
-    tree,
-    pathToHostRootRoutingFile,
-    `{
-      path: '',
-      component: NxWelcomeComponent
-    }`
-  );
-
-  tree.write(
-    pathToHostRootRoutingFile,
-    `import { NxWelcomeComponent } from './nx-welcome.component';
-    ${tree.read(pathToHostRootRoutingFile, 'utf-8')}`
-  );
-
-  generateFiles(
-    tree,
-    joinPathFragments(__dirname, 'files'),
-    joinPathFragments(sourceRoot, 'app'),
-    {
-      appName: normalizeProjectName(options.name, options.directory),
-      tmpl: '',
-    }
-  );
-}
+export default host;

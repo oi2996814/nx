@@ -1,8 +1,9 @@
 import { output } from '../../utils/output';
 import { TaskStatus } from '../tasks-runner';
 import { getPrintableCommandArgsForTask } from '../utils';
-import type { LifeCycle } from '../life-cycle';
+import type { LifeCycle, TaskResult } from '../life-cycle';
 import { Task } from '../../config/task-graph';
+import { formatTargetsAndProjects } from './formatting-utils';
 
 /**
  * The following life cycle's outputs are static, meaning no previous content
@@ -21,22 +22,23 @@ export class StaticRunOneTerminalOutputLifeCycle implements LifeCycle {
     private readonly projectNames: string[],
     private readonly tasks: Task[],
     private readonly args: {
-      target?: string;
+      targets?: string[];
       configuration?: string;
+      verbose?: boolean;
     }
   ) {}
 
   startCommand(): void {
     const numberOfDeps = this.tasks.length - 1;
-
+    const title = `Running ${formatTargetsAndProjects(
+      this.projectNames,
+      this.args.targets,
+      this.tasks
+    )}:`;
     if (numberOfDeps > 0) {
       output.log({
         color: 'cyan',
-        title: `Running target ${output.bold(
-          this.args.target
-        )} for project ${output.bold(this.initiatingProject)} and ${output.bold(
-          numberOfDeps
-        )} task(s) it depends on`,
+        title,
       });
       output.addVerticalSeparatorWithoutNewLines('cyan');
     }
@@ -58,9 +60,11 @@ export class StaticRunOneTerminalOutputLifeCycle implements LifeCycle {
           : [];
 
       output.success({
-        title: `Successfully ran target ${output.bold(
-          this.args.target
-        )} for project ${output.bold(this.initiatingProject)}`,
+        title: `Successfully ran ${formatTargetsAndProjects(
+          this.projectNames,
+          this.args.targets,
+          this.tasks
+        )}`,
         bodyLines,
       });
     } else {
@@ -76,15 +80,17 @@ export class StaticRunOneTerminalOutputLifeCycle implements LifeCycle {
         )}`,
       ];
       output.error({
-        title: `Running target "${this.initiatingProject}:${this.args.target}" failed`,
+        title: `Running ${formatTargetsAndProjects(
+          this.projectNames,
+          this.args.targets,
+          this.tasks
+        )} failed`,
         bodyLines,
       });
     }
   }
 
-  endTasks(
-    taskResults: { task: Task; status: TaskStatus; code: number }[]
-  ): void {
+  endTasks(taskResults: TaskResult[]): void {
     for (let t of taskResults) {
       if (t.status === 'failure') {
         this.failedTasks.push(t.task);
@@ -103,15 +109,20 @@ export class StaticRunOneTerminalOutputLifeCycle implements LifeCycle {
     status: TaskStatus,
     terminalOutput: string
   ) {
+    const args = getPrintableCommandArgsForTask(task);
     if (
+      this.args.verbose ||
       status === 'success' ||
       status === 'failure' ||
       task.target.project === this.initiatingProject
     ) {
-      const args = getPrintableCommandArgsForTask(task);
-      output.logCommand(args.join(' '), status);
-      output.addNewline();
-      process.stdout.write(terminalOutput);
+      output.logCommandOutput(args.join(' '), status, terminalOutput);
+    } else {
+      /**
+       * Do not show the terminal output in the case where it is not the initiating project and verbose is not set,
+       * but still print the command that was run and its status (so that cache hits can still be traced).
+       */
+      output.logCommandOutput(args.join(' '), status, '');
     }
   }
 }

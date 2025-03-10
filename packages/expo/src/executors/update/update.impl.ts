@@ -1,8 +1,9 @@
-import { ExecutorContext, names } from '@nrwl/devkit';
-import { join } from 'path';
+import { ExecutorContext, names } from '@nx/devkit';
+import { resolve as pathResolve } from 'path';
 import { ChildProcess, fork } from 'child_process';
 
-import { ensureNodeModulesSymlink } from '../../utils/ensure-node-modules-symlink';
+import { resolveEas } from '../../utils/resolve-eas';
+import { installAndUpdatePackageJson } from '../install/install.impl';
 
 import { ExpoEasUpdateOptions } from './schema';
 
@@ -16,10 +17,13 @@ export default async function* buildExecutor(
   options: ExpoEasUpdateOptions,
   context: ExecutorContext
 ): AsyncGenerator<ReactNativeUpdateOutput> {
-  const projectRoot = context.workspace.projects[context.projectName].root;
-  ensureNodeModulesSymlink(context.root, projectRoot);
+  const projectRoot =
+    context.projectsConfigurations.projects[context.projectName].root;
 
   try {
+    await installAndUpdatePackageJson(context, {
+      packages: ['expo-updates'],
+    });
     await runCliUpdate(context.root, projectRoot, options);
     yield { success: true };
   } finally {
@@ -36,9 +40,9 @@ function runCliUpdate(
 ) {
   return new Promise((resolve, reject) => {
     childProcess = fork(
-      join(workspaceRoot, './node_modules/eas-cli/bin/run'),
+      resolveEas(workspaceRoot),
       ['update', ...createUpdateOptions(options)],
-      { cwd: join(workspaceRoot, projectRoot) }
+      { cwd: pathResolve(workspaceRoot, projectRoot), env: process.env }
     );
 
     // Ensure the child process is killed when the parent exits
@@ -62,7 +66,11 @@ function createUpdateOptions(options: ExpoEasUpdateOptions) {
   return Object.keys(options).reduce((acc, k) => {
     const v = options[k];
     if (typeof v === 'boolean') {
-      if (v === true) {
+      if (k === 'interactive') {
+        if (v === false) {
+          acc.push('--non-interactive');
+        }
+      } else if (v === true) {
         // when true, does not need to pass the value true, just need to pass the flag in kebob case
         acc.push(`--${names(k).fileName}`);
       }

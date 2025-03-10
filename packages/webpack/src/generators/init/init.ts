@@ -1,70 +1,95 @@
 import {
   addDependenciesToPackageJson,
-  convertNxGenerator,
+  createProjectGraphAsync,
   formatFiles,
   GeneratorCallback,
-  readWorkspaceConfiguration,
+  readNxJson,
   Tree,
-  updateWorkspaceConfiguration,
-  writeJson,
-} from '@nrwl/devkit';
+} from '@nx/devkit';
+import { addPluginV1 } from '@nx/devkit/src/utils/add-plugin';
+import { createNodes } from '../../plugins/plugin';
+import { nxVersion, webpackCliVersion } from '../../utils/versions';
 import { Schema } from './schema';
-import { swcCoreVersion } from '@nrwl/js/src/utils/versions';
-import {
-  swcHelpersVersion,
-  swcLoaderVersion,
-  tsLibVersion,
-} from '../../utils/versions';
 
-export async function webpackInitGenerator(tree: Tree, schema: Schema) {
-  let task: GeneratorCallback;
+export function webpackInitGenerator(tree: Tree, schema: Schema) {
+  return webpackInitGeneratorInternal(tree, { addPlugin: false, ...schema });
+}
 
-  if (schema.compiler === 'babel') {
-    initRootBabelConfig(tree);
-  }
+export async function webpackInitGeneratorInternal(tree: Tree, schema: Schema) {
+  const nxJson = readNxJson(tree);
+  const addPluginDefault =
+    process.env.NX_ADD_PLUGINS !== 'false' &&
+    nxJson.useInferencePlugins !== false;
+  schema.addPlugin ??= addPluginDefault;
 
-  if (schema.compiler === 'swc') {
-    task = addDependenciesToPackageJson(
+  if (schema.addPlugin) {
+    await addPluginV1(
       tree,
-      {},
+      await createProjectGraphAsync(),
+      '@nx/webpack/plugin',
+      createNodes,
       {
-        '@swc/helpers': swcHelpersVersion,
-        '@swc/core': swcCoreVersion,
-        'swc-loader': swcLoaderVersion,
-      }
+        buildTargetName: [
+          'build',
+          'webpack:build',
+          'build:webpack',
+          'webpack-build',
+          'build-webpack',
+        ],
+        serveTargetName: [
+          'serve',
+          'webpack:serve',
+          'serve:webpack',
+          'webpack-serve',
+          'serve-webpack',
+        ],
+        previewTargetName: [
+          'preview',
+          'webpack:preview',
+          'preview:webpack',
+          'webpack-preview',
+          'preview-webpack',
+        ],
+        buildDepsTargetName: [
+          'build-deps',
+          'webpack:build-deps',
+          'webpack-build-deps',
+        ],
+        watchDepsTargetName: [
+          'watch-deps',
+          'webpack:watch-deps',
+          'webpack-watch-deps',
+        ],
+      },
+      schema.updatePackageScripts
     );
   }
 
-  if (schema.compiler === 'tsc') {
-    task = addDependenciesToPackageJson(tree, {}, { tslib: tsLibVersion });
+  let installTask: GeneratorCallback = () => {};
+  if (!schema.skipPackageJson) {
+    const devDependencies = {
+      '@nx/webpack': nxVersion,
+      '@nx/web': nxVersion,
+    };
+
+    if (schema.addPlugin) {
+      devDependencies['webpack-cli'] = webpackCliVersion;
+    }
+
+    installTask = addDependenciesToPackageJson(
+      tree,
+      {},
+      devDependencies,
+      undefined,
+      schema.keepExistingVersions
+    );
   }
 
   if (!schema.skipFormat) {
     await formatFiles(tree);
   }
 
-  return task;
-}
-
-function initRootBabelConfig(tree: Tree) {
-  if (tree.exists('/babel.config.json') || tree.exists('/babel.config.js')) {
-    return;
-  }
-
-  writeJson(tree, '/babel.config.json', {
-    babelrcRoots: ['*'], // Make sure .babelrc files other than root can be loaded in a monorepo
-  });
-
-  const workspaceConfiguration = readWorkspaceConfiguration(tree);
-
-  if (workspaceConfiguration.namedInputs?.sharedGlobals) {
-    workspaceConfiguration.namedInputs.sharedGlobals.push(
-      '{workspaceRoot}/babel.config.json'
-    );
-  }
-  updateWorkspaceConfiguration(tree, workspaceConfiguration);
+  return installTask;
 }
 
 export default webpackInitGenerator;
-
-export const webpackInitSchematic = convertNxGenerator(webpackInitGenerator);

@@ -1,14 +1,16 @@
 /**
- * Same as the @nrwl/react library schema, except it removes keys: style, routing, globalCss
+ * Same as the @nx/react library schema, except it removes keys: style, routing, globalCss
  */
 export interface Schema {
-  name: string;
-  project: string;
+  path: string;
+  name?: string;
   skipTests?: boolean;
-  directory?: string;
   export?: boolean;
-  pascalCaseFiles?: boolean;
   classComponent?: boolean;
+  skipFormat?: boolean;
+
+  /**
+   * @deprecated Provide the full file path including the file extension in the `path` option. This option will be removed in Nx v21.
+   */
   js?: boolean;
-  flat?: boolean;
 }

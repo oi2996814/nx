@@ -1,24 +1,26 @@
-import type { Tree } from '@nrwl/devkit';
+import { Tree } from '@nx/devkit';
+import { UnitTestRunner } from '../../../utils/test-runners';
+import { addJest } from '../../utils/add-jest';
+import { addVitest } from '../../utils/add-vitest';
 import type { NormalizedSchema } from './normalized-schema';
 
-import { jestProjectGenerator } from '@nrwl/jest';
-
-import { UnitTestRunner } from '../../../utils/test-runners';
-import karmaProjectGenerator from '../../karma-project/karma-project';
-
 export async function addUnitTestRunner(host: Tree, options: NormalizedSchema) {
-  if (options.unitTestRunner === UnitTestRunner.Jest) {
-    await jestProjectGenerator(host, {
-      project: options.name,
-      setupFile: 'angular',
-      supportTsx: false,
-      skipSerializers: false,
-      skipPackageJson: options.skipPackageJson,
-    });
-  } else if (options.unitTestRunner === UnitTestRunner.Karma) {
-    await karmaProjectGenerator(host, {
-      project: options.name,
-      skipFormat: true,
-    });
+  switch (options.unitTestRunner) {
+    case UnitTestRunner.Jest:
+      await addJest(host, {
+        name: options.name,
+        projectRoot: options.appProjectRoot,
+        skipPackageJson: options.skipPackageJson,
+        strict: options.strict,
+      });
+      break;
+    case UnitTestRunner.Vitest:
+      await addVitest(host, {
+        name: options.name,
+        projectRoot: options.appProjectRoot,
+        skipPackageJson: options.skipPackageJson,
+        strict: options.strict,
+      });
+      break;
   }
 }

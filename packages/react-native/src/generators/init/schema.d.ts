@@ -1,6 +1,7 @@
 export interface Schema {
-  unitTestRunner?: 'jest' | 'none';
   skipFormat?: boolean;
-  e2eTestRunner?: 'detox' | 'none';
-  js?: boolean;
+  skipPackageJson?: boolean; //default is false
+  keepExistingVersions?: boolean; //default is false
+  updatePackageScripts?: boolean;
+  addPlugin?: boolean;
 }

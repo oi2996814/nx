@@ -4,53 +4,185 @@ import {
   joinPathFragments,
   ProjectConfiguration,
   TargetConfiguration,
-} from '@nrwl/devkit';
+  Tree,
+  updateProjectConfiguration,
+  writeJson,
+} from '@nx/devkit';
+import { hasWebpackPlugin } from '../../../utils/has-webpack-plugin';
+import { maybeJs } from '../../../utils/maybe-js';
+import { hasRspackPlugin } from '../../../utils/has-rspack-plugin';
+import type { PackageJson } from 'nx/src/utils/package-json';
 
-export function addProject(host, options: NormalizedSchema) {
+export function addProject(host: Tree, options: NormalizedSchema) {
   const project: ProjectConfiguration = {
     root: options.appProjectRoot,
     sourceRoot: `${options.appProjectRoot}/src`,
     projectType: 'application',
-    targets: {
-      build: createBuildTarget(options),
-      serve: createServeTarget(options),
-    },
+    targets: {},
     tags: options.parsedTags,
   };
 
-  addProjectConfiguration(
-    host,
-    options.projectName,
-    {
+  if (options.bundler === 'webpack') {
+    if (!hasWebpackPlugin(host) || !options.addPlugin) {
+      project.targets = {
+        build: createBuildTarget(options),
+        serve: createServeTarget(options),
+      };
+    }
+  } else if (
+    options.bundler === 'rspack' &&
+    (!hasRspackPlugin(host) || !options.addPlugin)
+  ) {
+    project.targets = {
+      build: createRspackBuildTarget(options),
+      serve: createRspackServeTarget(options),
+    };
+  }
+
+  if (options.isUsingTsSolutionConfig) {
+    const packageJson: PackageJson = {
+      name: options.importPath,
+      version: '0.0.1',
+      private: true,
+    };
+
+    if (options.projectName !== options.importPath) {
+      packageJson.nx = { name: options.projectName };
+    }
+    if (Object.keys(project.targets).length) {
+      packageJson.nx ??= {};
+      packageJson.nx.targets = project.targets;
+    }
+    if (options.parsedTags?.length) {
+      packageJson.nx ??= {};
+      packageJson.nx.tags = options.parsedTags;
+    }
+
+    writeJson(
+      host,
+      joinPathFragments(options.appProjectRoot, 'package.json'),
+      packageJson
+    );
+  }
+
+  if (!options.isUsingTsSolutionConfig || options.alwaysGenerateProjectJson) {
+    addProjectConfiguration(host, options.projectName, {
       ...project,
-    },
-    options.standaloneConfig
-  );
+    });
+  } else if (
+    options.parsedTags?.length ||
+    Object.keys(project.targets).length
+  ) {
+    const updatedProject: ProjectConfiguration = {
+      root: options.appProjectRoot,
+      targets: project.targets,
+      tags: options.parsedTags?.length ? options.parsedTags : undefined,
+    };
+    updateProjectConfiguration(host, options.projectName, updatedProject);
+  }
 }
 
-function maybeJs(options: NormalizedSchema, path: string): string {
-  return options.js && (path.endsWith('.ts') || path.endsWith('.tsx'))
-    ? path.replace(/\.tsx?$/, '.js')
-    : path;
-}
-
-function createBuildTarget(options: NormalizedSchema): TargetConfiguration {
+function createRspackBuildTarget(
+  options: NormalizedSchema
+): TargetConfiguration {
   return {
-    executor: '@nrwl/webpack:webpack',
+    executor: '@nx/rspack:rspack',
     outputs: ['{options.outputPath}'],
     defaultConfiguration: 'production',
     options: {
-      compiler: options.compiler ?? 'babel',
-      outputPath: joinPathFragments('dist', options.appProjectRoot),
+      outputPath: options.isUsingTsSolutionConfig
+        ? joinPathFragments(options.appProjectRoot, 'dist')
+        : joinPathFragments(
+            'dist',
+            options.appProjectRoot !== '.'
+              ? options.appProjectRoot
+              : options.projectName
+          ),
       index: joinPathFragments(options.appProjectRoot, 'src/index.html'),
       baseHref: '/',
       main: joinPathFragments(
         options.appProjectRoot,
         maybeJs(options, `src/main.tsx`)
       ),
-      polyfills: joinPathFragments(
+      tsConfig: joinPathFragments(options.appProjectRoot, 'tsconfig.app.json'),
+      assets: [
+        joinPathFragments(options.appProjectRoot, 'src/favicon.ico'),
+        joinPathFragments(options.appProjectRoot, 'src/assets'),
+      ],
+      rspackConfig: joinPathFragments(
         options.appProjectRoot,
-        maybeJs(options, 'src/polyfills.ts')
+        'rspack.config.js'
+      ),
+      styles:
+        options.styledModule || !options.hasStyles
+          ? []
+          : [
+              joinPathFragments(
+                options.appProjectRoot,
+                `src/styles.${options.style}`
+              ),
+            ],
+      scripts: [],
+      configurations: {
+        development: {
+          mode: 'development',
+        },
+        production: {
+          mode: 'production',
+          optimization: true,
+          sourceMap: false,
+          outputHashing: 'all',
+          namedChunks: false,
+          extractLicenses: true,
+          vendorChunk: false,
+        },
+      },
+    },
+  };
+}
+
+function createRspackServeTarget(
+  options: NormalizedSchema
+): TargetConfiguration {
+  return {
+    executor: '@nx/rspack:dev-server',
+    defaultConfiguration: 'development',
+    options: {
+      buildTarget: `${options.projectName}:build`,
+      hmr: true,
+    },
+    configurations: {
+      development: {
+        buildTarget: `${options.projectName}:build:development`,
+      },
+      production: {
+        buildTarget: `${options.projectName}:build:production`,
+        hmr: false,
+      },
+    },
+  };
+}
+
+function createBuildTarget(options: NormalizedSchema): TargetConfiguration {
+  return {
+    executor: '@nx/webpack:webpack',
+    outputs: ['{options.outputPath}'],
+    defaultConfiguration: 'production',
+    options: {
+      compiler: options.compiler ?? 'babel',
+      outputPath: options.isUsingTsSolutionConfig
+        ? joinPathFragments(options.appProjectRoot, 'dist')
+        : joinPathFragments(
+            'dist',
+            options.appProjectRoot !== '.'
+              ? options.appProjectRoot
+              : options.projectName
+          ),
+      index: joinPathFragments(options.appProjectRoot, 'src/index.html'),
+      baseHref: '/',
+      main: joinPathFragments(
+        options.appProjectRoot,
+        maybeJs(options, `src/main.tsx`)
       ),
       tsConfig: joinPathFragments(options.appProjectRoot, 'tsconfig.app.json'),
       assets: [
@@ -67,7 +199,10 @@ function createBuildTarget(options: NormalizedSchema): TargetConfiguration {
               ),
             ],
       scripts: [],
-      webpackConfig: '@nrwl/react/plugins/webpack',
+      webpackConfig: joinPathFragments(
+        options.appProjectRoot,
+        'webpack.config.js'
+      ),
     },
     configurations: {
       development: {
@@ -102,7 +237,7 @@ function createBuildTarget(options: NormalizedSchema): TargetConfiguration {
 
 function createServeTarget(options: NormalizedSchema): TargetConfiguration {
   return {
-    executor: '@nrwl/webpack:dev-server',
+    executor: '@nx/webpack:dev-server',
     defaultConfiguration: 'development',
     options: {
       buildTarget: `${options.projectName}:build`,

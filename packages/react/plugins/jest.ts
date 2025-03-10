@@ -1,5 +1,5 @@
 import * as path from 'path';
-import { names } from '@nrwl/devkit';
+import { names } from '@nx/devkit';
 
 const JS_SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'];
 
@@ -17,23 +17,18 @@ module.exports = {
       module.exports = {
         __esModule: true,
         default: ${assetFilename},
-        ReactComponent: React.forwardRef(function ${componentName}(props, ref) {
-          return {
-            $$typeof: Symbol.for('react.element'),
-            type: 'svg',
-            ref: ref,
-            key: null,
-            props: Object.assign({}, props, {
-              children: ${assetFilename}
-            })
-          };
-        }),
+        ReactComponent: function ${componentName}(props) {
+          return React.createElement(
+            'svg',
+            Object.assign({}, props, { children: ${assetFilename} })
+          );
+        },
       };`,
       };
     }
 
     if (JS_SOURCE_EXTENSIONS.includes(path.extname(filename))) {
-      const transformer = getJsTransform();
+      const transformer = getJsTransform(options.config?.transform ?? []);
       if (transformer) return transformer.process(src, filename, options);
     }
 
@@ -44,15 +39,17 @@ module.exports = {
   },
 };
 
-function getJsTransform() {
+function getJsTransform(transformers?: [string, string, string?]) {
   try {
-    return require('babel-jest').default;
+    if (transformers?.[1]?.includes('@swc/jest')) {
+      return require('@swc/jest').createTransformer();
+    }
   } catch {
     // ignored
   }
 
   try {
-    return require('@swc/jest').createTransformer();
+    return require('babel-jest').default.createTransformer();
   } catch {
     // ignored
   }

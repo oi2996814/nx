@@ -1,27 +1,33 @@
 /**
+ * @deprecated use `nx run @nx/react-native:upgrade` instead.
+ * TODO (@xiongemi): remove this generator for nx v19
  * This function is a destructive command that replace React Native iOS and Android code with latest.
  * It would replace the Android and iOS folder entirely.
  */
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
-import { UpgradeNativeConfigureSchema } from './schema';
+
 import {
-  convertNxGenerator,
-  Tree,
-  joinPathFragments,
   GeneratorCallback,
+  joinPathFragments,
   readProjectConfiguration,
-} from '@nrwl/devkit';
-import { join } from 'path';
-import { createNativeFiles } from './lib/create-native-files';
-import { existsSync, removeSync } from 'fs-extra';
+  runTasksInSerial,
+  Tree,
+  logger,
+} from '@nx/devkit';
+import { existsSync } from 'fs';
 
 import { runPodInstall } from '../../utils/pod-install-task';
-import { runChmod } from '../../utils/chmod-task';
+import { chmodAndroidGradlewFilesTask } from '../../utils/chmod-android-gradle-files';
+
+import { createNativeFiles } from './lib/create-native-files';
+import { UpgradeNativeConfigureSchema } from './schema';
 
 export async function reactNativeUpgradeNativeGenerator(
   host: Tree,
   schema: UpgradeNativeConfigureSchema
 ): Promise<GeneratorCallback> {
+  logger.warn(
+    `Please run 'nx run @nx/react-native:upgrade ${schema.name}' instead.`
+  );
   const { projectType, root: appProjectRoot } = readProjectConfiguration(
     host,
     schema.name
@@ -44,20 +50,9 @@ export async function reactNativeUpgradeNativeGenerator(
   createNativeFiles(host, schema, appProjectRoot);
 
   const podInstallTask = runPodInstall(iosProjectRoot, schema.install);
-  const chmodTaskGradlew = runChmod(join(androidProjectRoot, 'gradlew'), 0o775);
-  const chmodTaskGradlewBat = runChmod(
-    join(androidProjectRoot, 'gradlew.bat'),
-    0o775
-  );
+  const chmodTaskGradlew = chmodAndroidGradlewFilesTask(androidProjectRoot);
 
-  return runTasksInSerial(
-    podInstallTask,
-    chmodTaskGradlew,
-    chmodTaskGradlewBat
-  );
+  return runTasksInSerial(podInstallTask, chmodTaskGradlew);
 }
 
 export default reactNativeUpgradeNativeGenerator;
-export const reactNativeUpgradeNativeSchematic = convertNxGenerator(
-  reactNativeUpgradeNativeGenerator
-);

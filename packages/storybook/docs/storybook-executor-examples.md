@@ -1,3 +1,8 @@
+---
+title: Storybook dev server executor examples
+description: This page contains examples for the @nx/storybook:storybook executor.
+---
+
 `project.json`:
 
 ```json
@@ -6,13 +11,10 @@
     "targets": {
         //...
         "storybook": {
-            "executor": "@nrwl/storybook:storybook",
+            "executor": "@nx/storybook:storybook",
             "options": {
-                "uiFramework": "@storybook/react",
                 "port": 4400,
-                "config": {
-                    "configFolder": "libs/ui/.storybook"
-                }
+                "configDir": "libs/ui/.storybook"
             },
             "configurations": {
                 "ci": {
@@ -33,29 +35,6 @@ nx run ui:storybook
 ### For non-Angular projects
 
 {% tabs %}
-{% tab label="Setting the uiFramework" %}
-
-You can change the `uiFramework` option, to correspond to the framework you are using for your project. Supported values are: `"@storybook/react"`, `"@storybook/html"`, `"@storybook/web-components"`, `"@storybook/vue"`, `"@storybook/vue3"` and `"@storybook/svelte"`. If you are using Angular, please check out the Angular-specific Storybook executor.
-
-```json
-"storybook": {
-    "executor": "@nrwl/storybook:storybook",
-    "options": {
-        "uiFramework": "@storybook/web-components",
-        "port": 4400,
-        "config": {
-            "configFolder": "libs/ui/.storybook"
-        }
-    },
-    "configurations": {
-        "ci": {
-            "quiet": true
-        }
-    }
-}
-```
-
-{% /tab %}
 {% tab label="Working in docsMode" %}
 
 You can work in docs mode, building a documentation-only site, by setting the `docsMode` option to `true` and using the `@storybook/addon-docs` addon.
@@ -64,13 +43,10 @@ Read more on the [Storybook documentation page for `addon-docs`](https://storybo
 
 ```json
 "storybook": {
-    "executor": "@nrwl/storybook:storybook",
+    "executor": "@nx/storybook:storybook",
     "options": {
-        "uiFramework": "@storybook/react",
         "port": 4400,
-        "config": {
-            "configFolder": "libs/ui/.storybook"
-        },
+        "configDir": "libs/ui/.storybook",
         "docsMode": true
     },
     "configurations": {
@@ -112,7 +88,7 @@ This is the default configuration for Angular projects using Storybook. You can 
 {% /tab %}
 {% tab label="Changing the browserTarget" %}
 
-You can set the [`browserTarget`](/storybook/angular-browser-target) to use `build-storybook` as the builder. This is most useful in the cases where your project does not have a `build` target.
+You can set the `browserTarget` to use `build-storybook` as the builder. This is most useful in the cases where your project does not have a `build` target. Read more about the `browserTarget` in the [Set up Storybook for Angular Projects](/recipes/storybook/overview-angular) recipe.
 
 ```json
 "storybook": {
@@ -135,7 +111,7 @@ You can set the [`browserTarget`](/storybook/angular-browser-target) to use `bui
 
 {% tab label="Adding styles" %}
 
-You can add paths to stylesheets to be included in the Storybook build by using the `styles` array. You can also add `stylePreprocessorOptions`, much like you would do in the Angular builder. You can read more in our guide about [styles and preprocessor options for Storybook](/storybook/angular-configuring-styles).
+You can add paths to stylesheets to be included in the Storybook build by using the `styles` array. You can also add `stylePreprocessorOptions`, much like you would do in the Angular builder. You can read more in our guide about [styles and preprocessor options for Storybook](/recipes/storybook/angular-configuring-styles).
 
 ```json
 "storybook": {

@@ -1,10 +1,13 @@
 {
-  "extends": "./tsconfig.json",
+  "extends": "<%= baseTsConfigPath %>",
   "compilerOptions": {
-    "module": "commonjs",
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
     "noEmit": false,
     "incremental": true,
-    "tsBuildInfoFile": "<%= offsetFromRoot %>/tmp/buildcache/<%= projectRoot %>/server",
+    <% if(hasPlugin && compiler === 'tsc') { %>
+    "tsBuildInfoFile": "<%= offsetFromRoot %>tmp/buildcache/<%= projectRoot %>/server",
+    <% } %>
     "types": [
       "node"
     ]

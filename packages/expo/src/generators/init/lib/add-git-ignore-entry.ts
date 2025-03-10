@@ -1,4 +1,4 @@
-import { logger, Tree } from '@nrwl/devkit';
+import { logger, Tree } from '@nx/devkit';
 import { gitIgnoreEntriesForExpo } from './gitignore-entries';
 
 export function addGitIgnoreEntry(host: Tree) {
@@ -7,7 +7,7 @@ export function addGitIgnoreEntry(host: Tree) {
     return;
   }
 
-  let content = host.read('.gitignore')?.toString('utf-8').trimRight();
+  let content = host.read('.gitignore')?.toString('utf-8').trimEnd();
 
   if (!/\.expo\/$/gm.test(content)) {
     content = `${content}\n${gitIgnoreEntriesForExpo}\n`;

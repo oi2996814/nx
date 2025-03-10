@@ -1,67 +1,43 @@
-import { ExecutorContext, logger } from '@nrwl/devkit';
-import * as build from '@storybook/core-server/standalone';
-import 'dotenv/config';
-import { CommonNxStorybookConfig } from '../models';
+import { ExecutorContext, logger } from '@nx/devkit';
+import { CLIOptions } from '@storybook/types';
 import {
-  getStorybookFrameworkPath,
-  resolveCommonStorybookOptionMapper,
-  runStorybookSetupCheck,
-} from '../utils';
-
-export interface StorybookBuilderOptions extends CommonNxStorybookConfig {
-  quiet?: boolean;
-  outputPath?: string;
-  docsMode?: boolean;
-}
+  pleaseUpgrade,
+  storybookConfigExistsCheck,
+  storybookMajorVersion,
+} from '../../utils/utilities';
 
 export default async function buildStorybookExecutor(
-  options: StorybookBuilderOptions,
+  options: CLIOptions,
   context: ExecutorContext
 ) {
-  logger.info(`NX ui framework: ${options.uiFramework}`);
+  storybookConfigExistsCheck(options.configDir, context.projectName);
+  const storybookMajor = storybookMajorVersion();
+  if (storybookMajor > 0 && storybookMajor <= 6) {
+    throw pleaseUpgrade();
+  } else if (storybookMajor === 7) {
+    logger.warn(
+      `Support for Storybook 7 is deprecated. Please upgrade to Storybook 8. See https://nx.dev/nx-api/storybook/generators/migrate-8 for more details.`
+    );
+  }
 
-  const frameworkPath = getStorybookFrameworkPath(options.uiFramework);
-  const { default: frameworkOptions } = await import(frameworkPath);
-
-  const option = storybookOptionMapper(options, frameworkOptions, context);
-
-  // print warnings
-  runStorybookSetupCheck(options);
-
+  const buildOptions: CLIOptions = options;
   logger.info(`NX Storybook builder starting ...`);
-  await runInstance(option);
+  await runInstance(buildOptions);
   logger.info(`NX Storybook builder finished ...`);
-  logger.info(`NX Storybook files available in ${options.outputPath}`);
+  logger.info(`NX Storybook files available in ${buildOptions.outputDir}`);
   return { success: true };
 }
 
-function runInstance(options: StorybookBuilderOptions): Promise<void> {
+async function runInstance(options: CLIOptions): Promise<void | {
+  port: number;
+  address: string;
+  networkAddress: string;
+}> {
+  const storybookCore = await import('@storybook/core-server');
   const env = process.env.NODE_ENV ?? 'production';
   process.env.NODE_ENV = env;
-  return build({
+  return storybookCore.build({
     ...options,
-    ci: true,
-    configType: env.toUpperCase(),
+    mode: 'static',
   });
-}
-
-function storybookOptionMapper(
-  builderOptions: StorybookBuilderOptions,
-  frameworkOptions: any,
-  context: ExecutorContext
-) {
-  const storybookOptions = {
-    ...builderOptions,
-    ...resolveCommonStorybookOptionMapper(
-      builderOptions,
-      frameworkOptions,
-      context
-    ),
-    mode: builderOptions?.['mode'] ?? 'static',
-    outputDir:
-      (builderOptions?.['outputDir'] || builderOptions?.['output-dir']) ??
-      builderOptions.outputPath,
-  };
-
-  return storybookOptions;
 }

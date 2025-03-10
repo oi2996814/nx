@@ -1,36 +1,41 @@
-import type { Tree } from '@nrwl/devkit';
-import {
-  joinPathFragments,
-  readProjectConfiguration,
-  readWorkspaceConfiguration,
-} from '@nrwl/devkit';
+import type { Tree } from '@nx/devkit';
+import { names } from '@nx/devkit';
+import { determineArtifactNameAndDirectoryOptions } from '@nx/devkit/src/generators/artifact-name-and-directory-utils';
+import { validateClassName } from '../../utils/validations';
 import type { NormalizedSchema, Schema } from '../schema';
 
-export function normalizeOptions(
+export async function normalizeOptions(
   tree: Tree,
   options: Schema
-): NormalizedSchema {
-  const project =
-    options.project ?? readWorkspaceConfiguration(tree).defaultProject;
-  const { projectType, root, sourceRoot } = readProjectConfiguration(
-    tree,
-    project
-  );
-  const projectSourceRoot = sourceRoot ?? joinPathFragments(root, 'src');
-  const path =
-    options.path ??
-    joinPathFragments(
-      projectSourceRoot,
-      projectType === 'application' ? 'app' : 'lib'
-    );
+): Promise<NormalizedSchema> {
+  const {
+    artifactName: name,
+    directory,
+    fileName,
+    filePath,
+    project: projectName,
+  } = await determineArtifactNameAndDirectoryOptions(tree, {
+    name: options.name,
+    path: options.path,
+    suffix: 'directive',
+    allowedFileExtensions: ['ts'],
+    fileExtension: 'ts',
+  });
+
+  const { className } = names(name);
+  const { className: suffixClassName } = names('directive');
+  const symbolName = `${className}${suffixClassName}`;
+  validateClassName(symbolName);
 
   return {
     ...options,
     export: options.export ?? true,
-    flat: options.flat ?? true,
     inlineScam: options.inlineScam ?? true,
-    path,
-    project,
-    projectSourceRoot,
+    directory,
+    fileName,
+    filePath,
+    name,
+    symbolName,
+    projectName,
   };
 }

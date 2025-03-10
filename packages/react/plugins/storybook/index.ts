@@ -1,31 +1,29 @@
 import {
+  createProjectGraphAsync,
   ExecutorContext,
-  joinPathFragments,
   logger,
-  ProjectGraph,
-  readJsonFile,
-  readNxJson,
-  TargetConfiguration,
+  ProjectGraphProjectNode,
   workspaceRoot,
-} from '@nrwl/devkit';
-import { getBaseWebpackPartial } from '@nrwl/webpack/src/utils/config';
-import { getStylesPartial } from '@nrwl/webpack/src/executors/webpack/lib/get-webpack-config';
-import { checkAndCleanWithSemver } from '@nrwl/workspace/src/utilities/version-utils';
+} from '@nx/devkit';
+import { composePluginsSync } from '@nx/webpack/src/utils/config';
+import { NormalizedWebpackExecutorOptions } from '@nx/webpack/src/executors/webpack/schema';
 import { join } from 'path';
-import { gte } from 'semver';
-import { Configuration, DefinePlugin, WebpackPluginInstance } from 'webpack';
-import * as mergeWebpack from 'webpack-merge';
+import {
+  Configuration,
+  DefinePlugin,
+  ResolvePluginInstance,
+  WebpackPluginInstance,
+} from 'webpack';
 import { mergePlugins } from './merge-plugins';
-import { readProjectsConfigurationFromProjectGraph } from 'nx/src/project-graph/project-graph';
-
-const reactWebpackConfig = require('../webpack');
+import { withReact } from '../with-react';
+import { existsSync } from 'fs';
 
 // This is shamelessly taken from CRA and modified for NX use
 // https://github.com/facebook/create-react-app/blob/4784997f0682e75eb32a897b4ffe34d735912e6c/packages/react-scripts/config/env.js#L71
 function getClientEnvironment(mode) {
   // Grab NODE_ENV and NX_* and STORYBOOK_* environment variables and prepare them to be
   // injected into the application via DefinePlugin in webpack configuration.
-  const NX_PREFIX = /^NX_/i;
+  const NX_PREFIX = /^NX_PUBLIC_/i;
   const STORYBOOK_PREFIX = /^STORYBOOK_/i;
 
   const raw = Object.keys(process.env)
@@ -62,157 +60,181 @@ function getClientEnvironment(mode) {
   return { stringified };
 }
 
-export const babelDefault = (): Record<
-  string,
-  // eslint-disable-next-line @typescript-eslint/ban-types
-  (string | [string, object])[]
-> => {
-  // Add babel plugin for styled-components or emotion.
-  // We don't have a good way to know when a project uses one or the other, so
-  // add the plugin only if the other style package isn't used.
-  const packageJson = readJsonFile(join(workspaceRoot, 'package.json'));
-  const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-  const hasStyledComponents = !!deps['styled-components'];
-
-  const plugins = [];
-  if (hasStyledComponents) {
-    plugins.push(['styled-components', { ssr: false }]);
-  }
-
-  return {
-    presets: [],
-    plugins: [...plugins],
-  };
-};
-
 export const core = (prev, options) => ({
   ...prev,
   disableWebpackDefaults: true,
 });
+
+interface NxProjectData {
+  workspaceRoot: string;
+  projectRoot: string;
+  sourceRoot: string;
+  projectNode?: ProjectGraphProjectNode;
+}
+
+const getProjectData = async (
+  storybookOptions: any
+): Promise<NxProjectData> => {
+  const fallbackData = {
+    workspaceRoot: storybookOptions.configDir,
+    projectRoot: '',
+    sourceRoot: '',
+  };
+  // Edge-case: not running from Nx
+  if (!process.env.NX_WORKSPACE_ROOT) return fallbackData;
+
+  const projectGraph = await createProjectGraphAsync();
+  const projectNode = projectGraph.nodes[process.env.NX_TASK_TARGET_PROJECT];
+
+  return projectNode
+    ? {
+        workspaceRoot: process.env.NX_WORKSPACE_ROOT,
+        projectRoot: projectNode.data.root,
+        sourceRoot: projectNode.data.sourceRoot,
+        projectNode,
+      }
+    : // Edge-case: missing project node
+      fallbackData;
+};
+
+const fixBabelConfigurationIfNeeded = (
+  webpackConfig: Configuration,
+  projectData: NxProjectData
+): void => {
+  if (!projectData.projectNode) return;
+
+  const isUsingBabelUpwardRootMode = Object.keys(
+    projectData.projectNode.data.targets
+  ).find((k) => {
+    const targetConfig = projectData.projectNode.data.targets[k];
+    return (
+      targetConfig.executor === '@nx/webpack:webpack' &&
+      targetConfig.options?.babelUpwardRootMode
+    );
+  });
+
+  if (isUsingBabelUpwardRootMode) return;
+
+  let babelrcPath: string;
+  for (const ext of ['', '.json', '.js', '.cjs', '.mjs', '.cts']) {
+    const candidate = join(
+      projectData.workspaceRoot,
+      projectData.projectRoot,
+      `.babelrc${ext}`
+    );
+    if (existsSync(candidate)) {
+      babelrcPath = candidate;
+      break;
+    }
+  }
+
+  // Unexpected setup, skip.
+  if (!babelrcPath) return;
+
+  let babelRuleItem;
+  for (const rule of webpackConfig.module.rules) {
+    if (typeof rule === 'string') continue;
+    if (!rule || !Array.isArray(rule.use)) continue;
+    for (const item of rule.use) {
+      if (typeof item !== 'string' && item['loader'].includes('babel-loader')) {
+        babelRuleItem = item;
+        break;
+      }
+    }
+  }
+
+  if (babelRuleItem) {
+    babelRuleItem.options.configFile = babelrcPath;
+  }
+};
 
 export const webpack = async (
   storybookWebpackConfig: Configuration = {},
   options: any
 ): Promise<Configuration> => {
   logger.info(
-    '=> Loading Nrwl React Storybook preset from "@nrwl/react/plugins/storybook"'
+    '=> Loading Nx React Storybook Addon from "@nx/react/plugins/storybook"'
   );
+  // In case anyone is missing dep and did not run migrations.
+  // See: https://github.com/nrwl/nx/issues/14455
+  try {
+    require.resolve('@nx/webpack');
+  } catch {
+    throw new Error(
+      `'@nx/webpack' package is not installed. Install it and try again.`
+    );
+  }
 
-  const tsconfigPath = join(options.configDir, 'tsconfig.json');
+  const { withNx, withWeb } = require('@nx/webpack');
 
-  const builderOptions: any = {
+  const projectData = await getProjectData(options);
+  const tsconfigPath = existsSync(
+    join(projectData.projectRoot, 'tsconfig.storybook.json')
+  )
+    ? join(projectData.projectRoot, 'tsconfig.storybook.json')
+    : join(projectData.projectRoot, 'tsconfig.json');
+  // The 'tsconfig.json' is mainly for the cypress test to be able to run
+  // because it will look into the cypress project dir and it will not find tsconfig.storybook.json
+
+  fixBabelConfigurationIfNeeded(storybookWebpackConfig, projectData);
+
+  const builderOptions: NormalizedWebpackExecutorOptions = {
     ...options,
-    root: options.configDir,
-    sourceRoot: '',
+    root: projectData.workspaceRoot,
+    projectRoot: projectData.projectRoot,
+    sourceRoot: projectData.sourceRoot,
     fileReplacements: [],
-    sourceMap: {
-      hidden: false,
-      scripts: true,
-      styles: true,
-      vendors: false,
-    },
-    styles: [],
+    sourceMap: true,
+    styles: options.styles ?? [],
     optimization: {},
     tsConfig: tsconfigPath,
     extractCss: storybookWebpackConfig.mode === 'production',
+    target: 'web',
   };
 
-  const esm = true;
-  const isScriptOptimizeOn = storybookWebpackConfig.mode !== 'development';
-  const extractCss = storybookWebpackConfig.mode === 'production';
-
   // ESM build for modern browsers.
-  const baseWebpackConfig = mergeWebpack.merge([
-    getBaseWebpackPartial(builderOptions, {
-      esm,
-      isScriptOptimizeOn,
-      skipTypeCheck: true,
-    }),
-    getStylesPartial(
-      options.workspaceRoot,
-      options.configDir,
-      builderOptions,
-      extractCss
-    ),
-  ]);
+  let baseWebpackConfig: Configuration = {};
+  const configure = composePluginsSync(
+    withNx({ target: 'web', skipTypeChecking: true }),
+    withReact()
+  );
+  const finalConfig = configure(baseWebpackConfig, {
+    options: builderOptions,
+    context: { root: workspaceRoot } as ExecutorContext, // The context is not used here.
+  });
 
-  // run it through the React customizations
-  const finalConfig = reactWebpackConfig(baseWebpackConfig);
-
-  // Check whether the project .babelrc uses @emotion/babel-plugin. There's currently
-  // a Storybook issue (https://github.com/storybookjs/storybook/issues/13277) which apparently
-  // doesn't work with `@emotion/*` >= v11
-  // this is a workaround to fix that
-  let resolvedEmotionAliases = {};
-  const packageJson = readJsonFile(join(workspaceRoot, 'package.json'));
-  const deps = { ...packageJson.dependencies, ...packageJson.devDependencies };
-
-  const emotionReactVersion = deps['@emotion/react'];
-  if (
-    emotionReactVersion &&
-    gte(
-      checkAndCleanWithSemver('@emotion/react', emotionReactVersion),
-      '11.0.0'
-    )
-  ) {
-    try {
-      const babelrc = readJsonFile(
-        options.babelrcPath ||
-          joinPathFragments(options.configDir, '../', '.babelrc')
-      );
-      if (babelrc?.plugins?.includes('@emotion/babel-plugin')) {
-        resolvedEmotionAliases = {
-          resolve: {
-            alias: {
-              '@emotion/core': joinPathFragments(
-                workspaceRoot,
-                'node_modules',
-                '@emotion/react'
-              ),
-              '@emotion/styled': joinPathFragments(
-                workspaceRoot,
-                'node_modules',
-                '@emotion/styled'
-              ),
-              'emotion-theming': joinPathFragments(
-                workspaceRoot,
-                'node_modules',
-                '@emotion/react'
-              ),
-            },
-          },
-        };
-      }
-    } catch (error) {
-      // silently ignore if the .babelrc doesn't exist
-    }
-  }
-  return mergeWebpack.merge(
-    {
-      ...storybookWebpackConfig,
-      module: {
-        ...storybookWebpackConfig.module,
-        rules: [
-          ...storybookWebpackConfig.module.rules,
-          ...finalConfig.module.rules,
-        ],
-      },
-      resolve: {
-        ...storybookWebpackConfig.resolve,
-        plugins: mergePlugins(
-          ...((storybookWebpackConfig.resolve.plugins ??
-            []) as unknown as WebpackPluginInstance[]),
-          ...(finalConfig.resolve.plugins ?? [])
-        ),
+  return {
+    ...storybookWebpackConfig,
+    module: {
+      ...storybookWebpackConfig.module,
+      rules: [
+        ...storybookWebpackConfig.module.rules,
+        ...finalConfig.module.rules,
+      ],
+    },
+    resolve: {
+      ...storybookWebpackConfig.resolve,
+      fallback: {
+        ...storybookWebpackConfig.resolve?.fallback,
+        // Next.js and other React frameworks may have server-code that uses these modules.
+        // They are not meant for client-side components so skip the fallbacks.
+        assert: false,
+        path: false,
+        util: false,
       },
       plugins: mergePlugins(
-        new DefinePlugin(
-          getClientEnvironment(storybookWebpackConfig.mode).stringified
-        ),
-        ...(storybookWebpackConfig.plugins ?? []),
-        ...(finalConfig.plugins ?? [])
-      ),
+        ...((storybookWebpackConfig.resolve.plugins ??
+          []) as ResolvePluginInstance[]),
+        ...((finalConfig.resolve
+          .plugins as unknown as ResolvePluginInstance[]) ?? [])
+      ) as ResolvePluginInstance[],
     },
-    resolvedEmotionAliases
-  );
+    plugins: mergePlugins(
+      new DefinePlugin(
+        getClientEnvironment(storybookWebpackConfig.mode).stringified
+      ),
+      ...((storybookWebpackConfig.plugins as WebpackPluginInstance[]) ?? []),
+      ...((finalConfig.plugins as WebpackPluginInstance[]) ?? [])
+    ) as WebpackPluginInstance[],
+  };
 };

@@ -1,5 +1,5 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "NxWorkspaceCIWorkflow",
   "title": "Generate a CI workflow.",
   "description": "Generate a CI workflow.",
@@ -9,14 +9,16 @@
     "ci": {
       "type": "string",
       "description": "CI provider.",
-      "enum": ["github", "circleci", "azure"],
+      "enum": ["github", "circleci", "azure", "bitbucket-pipelines", "gitlab"],
       "x-prompt": {
         "message": "What is your target CI provider?",
         "type": "list",
         "items": [
-          { "value": "github", "label": "Github Actions" },
+          { "value": "github", "label": "GitHub Actions" },
           { "value": "circleci", "label": "Circle CI" },
-          { "value": "azure", "label": "Azure DevOps" }
+          { "value": "azure", "label": "Azure DevOps" },
+          { "value": "bitbucket-pipelines", "label": "BitBucket Pipelines" },
+          { "value": "gitlab", "label": "Gitlab" }
         ]
       }
     },
@@ -32,5 +34,5 @@
       "pattern": "^[a-zA-Z].*$"
     }
   },
-  "required": ["ci"]
+  "required": ["ci", "name"]
 }

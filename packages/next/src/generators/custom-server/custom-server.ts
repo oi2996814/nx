@@ -1,40 +1,52 @@
-import type { Tree } from '@nrwl/devkit';
+import { joinPathFragments, Tree } from '@nx/devkit';
 import {
   updateJson,
-  convertNxGenerator,
   generateFiles,
-  joinPathFragments,
   logger,
   offsetFromRoot,
   readProjectConfiguration,
   updateProjectConfiguration,
-} from '@nrwl/devkit';
+  readNxJson,
+} from '@nx/devkit';
 import { CustomServerSchema } from './schema';
+import { join } from 'path';
+import { configureForSwc } from '../../utils/add-swc-to-custom-server';
+import { isUsingTsSolutionSetup } from '@nx/js/src/utils/typescript/ts-solution-setup';
 
 export async function customServerGenerator(
   host: Tree,
   options: CustomServerSchema
-): Promise<void> {
+) {
   const project = readProjectConfiguration(host, options.project);
+  const swcServerName = '.server.swcrc';
 
-  if (project.targets?.build?.executor !== '@nrwl/next:build') {
+  const nxJson = readNxJson(host);
+  const hasPlugin = nxJson.plugins?.some((p) =>
+    typeof p === 'string'
+      ? p === '@nx/next/plugin'
+      : p.plugin === '@nx/next/plugin'
+  );
+
+  if (project.targets?.build?.executor !== '@nx/next:build' && !hasPlugin) {
     logger.error(
-      `Project ${options.project} is not a Next.js project. Did you generate it with "nx g @nrwl/next:app"?`
+      `Project ${options.project} is not a Next.js project. Did you generate it with "nx g @nx/next:app"?`
     );
     return;
   }
 
-  const outputPath = project.targets?.build?.options?.outputPath;
-  const root = project.targets?.build?.options?.root;
+  // In Nx 18 next artifacts are inside the project root .next/ & dist/ (for custom server)
+  const outputPath = `dist/${project.root}-server`;
+  const root = project.root;
 
   if (
-    !root ||
-    !outputPath ||
-    !project.targets?.build?.configurations?.development ||
-    !project.targets?.build?.configurations?.production
+    (!root ||
+      !outputPath ||
+      !project.targets?.build?.configurations?.development ||
+      !project.targets?.build?.configurations?.production) &&
+    !hasPlugin
   ) {
     logger.error(
-      `Project ${options.project} has invalid config. Did you generate it with "nx g @nrwl/next:app"?`
+      `Project ${options.project} has invalid config. Did you generate it with "nx g @nx/next:app"?`
     );
     return;
   }
@@ -49,20 +61,40 @@ export async function customServerGenerator(
     return;
   }
 
-  generateFiles(host, joinPathFragments(__dirname, 'files'), project.root, {
+  // In Nx 18 next artifacts are inside the project root .next/ & dist/ (for custom server)
+  // So we need ensure the mapping is correct from dist to the project root
+  const projectPathFromDist = hasPlugin
+    ? `../../${offsetFromRoot(project.root)}${project.root}`
+    : `${offsetFromRoot(`dist/${project.root}`)}${project.root}`;
+
+  const offset = offsetFromRoot(project.root);
+  const isTsSolution = isUsingTsSolutionSetup(host);
+
+  generateFiles(host, join(__dirname, 'files'), project.root, {
     ...options,
-    offsetFromRoot: offsetFromRoot(project.root),
+    hasPlugin,
+    projectPathFromDist,
+    offsetFromRoot: offset,
     projectRoot: project.root,
+    baseTsConfigPath: isTsSolution
+      ? joinPathFragments(offset, 'tsconfig.base.json')
+      : './tsconfig.json',
     tmpl: '',
   });
 
-  project.targets.build.dependsOn = ['build-custom-server'];
-  project.targets.serve.options.customServerTarget = `${options.project}:serve-custom-server`;
-  project.targets.serve.configurations.development.customServerTarget = `${options.project}:serve-custom-server:development`;
-  project.targets.serve.configurations.production.customServerTarget = `${options.project}:serve-custom-server:production`;
+  if (!hasPlugin) {
+    project.targets.build.dependsOn = ['build-custom-server'];
+    project.targets.serve.options.customServerTarget = `${options.project}:serve-custom-server`;
+    project.targets.serve.configurations.development.customServerTarget = `${options.project}:serve-custom-server:development`;
+    project.targets.serve.configurations.production.customServerTarget = `${options.project}:serve-custom-server:production`;
+  } else {
+    project.targets['build'] = {
+      dependsOn: ['^build', 'build-custom-server'],
+    };
+  }
 
   project.targets['build-custom-server'] = {
-    executor: '@nrwl/js:tsc',
+    executor: options.compiler === 'tsc' ? '@nx/js:tsc' : '@nx/js:swc',
     defaultConfiguration: 'production',
     options: {
       outputPath,
@@ -70,6 +102,9 @@ export async function customServerGenerator(
       tsConfig: `${root}/tsconfig.server.json`,
       clean: false,
       assets: [],
+      ...(options.compiler === 'tsc'
+        ? {}
+        : { swcrc: `${root}/${swcServerName}` }),
     },
     configurations: {
       development: {},
@@ -78,8 +113,8 @@ export async function customServerGenerator(
   };
 
   project.targets['serve-custom-server'] = {
-    executor: '@nrwl/js:node',
-    defaultConfiguration: 'development',
+    executor: '@nx/js:node',
+    defaultConfiguration: 'production',
     options: {
       buildTarget: `${options.project}:build-custom-server`,
     },
@@ -96,14 +131,28 @@ export async function customServerGenerator(
   updateProjectConfiguration(host, options.project, project);
 
   updateJson(host, 'nx.json', (json) => {
-    json.tasksRunnerOptions ??= {};
-    json.tasksRunnerOptions.default ??= { options: {} };
-    json.tasksRunnerOptions.default.options.cacheableOperations = [
-      ...json.tasksRunnerOptions.default.options.cacheableOperations,
-      'build-custom-server',
-    ];
+    if (
+      !json.tasksRunnerOptions?.default?.options?.cacheableOperations?.includes(
+        'build-custom-server'
+      ) &&
+      json.tasksRunnerOptions?.default?.options?.cacheableOperations
+    ) {
+      json.tasksRunnerOptions.default.options.cacheableOperations.push(
+        'build-custom-server'
+      );
+    }
+    json.targetDefaults ??= {};
+    json.targetDefaults['build-custom-server'] ??= {};
+    json.targetDefaults['build-custom-server'].cache ??= true;
     return json;
   });
-}
 
-export const customServerSchematic = convertNxGenerator(customServerGenerator);
+  if (options.compiler === 'swc') {
+    // Update app swc to exlude server files
+    updateJson(host, join(project.root, '.swcrc'), (json) => {
+      json.exclude = [...(json.exclude ?? []), 'server/**'];
+      return json;
+    });
+    return configureForSwc(host, project.root, swcServerName, ['src/**/*']);
+  }
+}

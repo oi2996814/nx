@@ -1,4 +1,12 @@
 import {
+  RULE_NAME as ensurePnpmLockVersionName,
+  rule as ensurePnpmLockVersion,
+} from './rules/ensure-pnpm-lock-version';
+import {
+  RULE_NAME as validCommandObjectName,
+  rule as validCommandObject,
+} from './rules/valid-command-object';
+import {
   RULE_NAME as validSchemaDescriptionName,
   rule as validSchemaDescription,
 } from './rules/valid-schema-description';
@@ -13,7 +21,7 @@ import {
  * following generator command and provide your desired rule name:
  *
  * ```sh
- * npx nx g @nrwl/linter:workspace-rule {{ NEW_RULE_NAME }}
+ * npx nx g @nx/eslint:workspace-rule {{ NEW_RULE_NAME }}
  * ```
  */
 
@@ -27,5 +35,9 @@ module.exports = {
    *  [myCustomRuleName]: myCustomRule
    * }
    */
-  rules: { [validSchemaDescriptionName]: validSchemaDescription },
+  rules: {
+    [validSchemaDescriptionName]: validSchemaDescription,
+    [validCommandObjectName]: validCommandObject,
+    [ensurePnpmLockVersionName]: ensurePnpmLockVersion,
+  },
 };

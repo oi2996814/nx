@@ -15,7 +15,7 @@ jest.mock('jest-config', () => ({
   readConfig,
 }));
 
-import { ExecutorContext } from '@nrwl/devkit';
+import { ExecutorContext } from '@nx/devkit';
 import { jestExecutor } from './jest.impl';
 import { JestExecutorOptions } from './schema';
 
@@ -37,22 +37,41 @@ describe('Jest Executor', () => {
     mockContext = {
       root: '/root',
       projectName: 'proj',
-      workspace: {
+      projectGraph: {
+        nodes: {
+          proj: {
+            type: 'lib',
+            name: 'proj',
+            data: {
+              root: 'proj',
+              targets: {
+                test: {
+                  executor: '@nx/jest:jest',
+                },
+              },
+            },
+          },
+        },
+        dependencies: {
+          proj: [],
+        },
+      },
+      projectsConfigurations: {
         version: 2,
         projects: {
           proj: {
             root: 'proj',
             targets: {
               test: {
-                executor: '@nrwl/jest:jest',
+                executor: '@nx/jest:jest',
               },
             },
           },
         },
-        npmScope: 'test',
       },
+      nxJsonConfiguration: {},
       target: {
-        executor: '@nrwl/jest:jest',
+        executor: '@nx/jest:jest',
       },
       cwd: '/root',
       isVerbose: true,
@@ -108,6 +127,7 @@ describe('Jest Executor', () => {
         },
         mockContext
       );
+      expect(process.argv).toContain('--group=core');
       expect(runCLI).toHaveBeenCalledWith(
         expect.objectContaining({
           _: [],
@@ -117,6 +137,7 @@ describe('Jest Executor', () => {
         }),
         ['/root/jest.config.js']
       );
+      process.argv.pop(); // clean extra arg.
     });
 
     it('should send appropriate options to jestCLI when testFile is specified', async () => {

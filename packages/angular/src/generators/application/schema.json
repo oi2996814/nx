@@ -1,24 +1,25 @@
 {
-  "$schema": "http://json-schema.org/schema",
+  "$schema": "https://json-schema.org/schema",
   "$id": "GeneratorNxApp",
   "title": "Creates an Angular application.",
   "description": "Creates an Angular application.",
   "type": "object",
   "cli": "nx",
   "properties": {
-    "name": {
-      "description": "The name of the application.",
+    "directory": {
+      "description": "The directory of the new application.",
       "type": "string",
       "$default": {
         "$source": "argv",
         "index": 0
       },
-      "x-prompt": "What name would you like to use for the application?",
-      "pattern": "^[a-zA-Z].*$"
+      "x-prompt": "Which directory do you want to create the application in?"
     },
-    "directory": {
-      "description": "The directory of the new application.",
-      "type": "string"
+    "name": {
+      "description": "The name of the application.",
+      "type": "string",
+      "pattern": "^[a-zA-Z][^:]*$",
+      "x-priority": "important"
     },
     "style": {
       "description": "The file extension to be used for style files.",
@@ -35,24 +36,24 @@
           },
           {
             "value": "scss",
-            "label": "SASS(.scss)  [ http://sass-lang.com   ]"
+            "label": "SASS(.scss)  [ https://sass-lang.com   ]"
           },
           {
             "value": "sass",
-            "label": "SASS(.sass)  [ http://sass-lang.com   ]"
+            "label": "SASS(.sass)  [ https://sass-lang.com   ]"
           },
           {
             "value": "less",
-            "label": "LESS         [ http://lesscss.org     ]"
+            "label": "LESS         [ https://lesscss.org     ]"
           }
         ]
       }
     },
     "routing": {
       "type": "boolean",
-      "description": "Generate a routing module.",
-      "default": false,
-      "x-prompt": "Would you like to configure routing for this application?"
+      "description": "Enable routing for the application.",
+      "default": true,
+      "x-priority": "important"
     },
     "inlineStyle": {
       "description": "Specifies if the style will be in the ts file.",
@@ -75,6 +76,7 @@
       "type": "string",
       "format": "html-selector",
       "description": "The prefix to apply to generated selectors.",
+      "default": "app",
       "alias": "p"
     },
     "skipTests": {
@@ -86,29 +88,28 @@
     "skipFormat": {
       "description": "Skip formatting files.",
       "type": "boolean",
-      "default": false
+      "default": false,
+      "x-priority": "internal"
     },
     "skipPackageJson": {
       "type": "boolean",
       "default": false,
-      "description": "Do not add dependencies to `package.json`."
-    },
-    "skipPostInstall": {
-      "type": "boolean",
-      "default": false,
-      "description": "Do not add or append `ngcc` to the `postinstall` script in `package.json`."
+      "description": "Do not add dependencies to `package.json`.",
+      "x-priority": "internal"
     },
     "unitTestRunner": {
       "type": "string",
-      "enum": ["karma", "jest", "none"],
+      "enum": ["jest", "vitest", "none"],
       "description": "Test runner to use for unit tests.",
+      "x-prompt": "Which unit test runner would you like to use?",
       "default": "jest"
     },
     "e2eTestRunner": {
       "type": "string",
-      "enum": ["protractor", "cypress", "none"],
-      "description": "Test runner to use for end to end (E2E) tests. The `protractor` option is deprecated and it will be removed in v15.",
-      "default": "cypress"
+      "enum": ["playwright", "cypress", "none"],
+      "description": "Test runner to use for end to end (E2E) tests.",
+      "x-prompt": "Which E2E test runner would you like to use?",
+      "default": "playwright"
     },
     "tags": {
       "type": "string",
@@ -131,7 +132,9 @@
     },
     "standaloneConfig": {
       "description": "Split the project configuration into `<projectRoot>/project.json` rather than including it inside `workspace.json`.",
-      "type": "boolean"
+      "type": "boolean",
+      "default": true,
+      "x-deprecated": "Nx only supports standaloneConfig"
     },
     "port": {
       "type": "number",
@@ -147,17 +150,44 @@
       "description": "Whether to configure Tailwind CSS for the application.",
       "default": false
     },
-    "skipDefaultProject": {
-      "description": "Skip setting the project as the default project. When `false` (the default), the project is set as the default project only if there is no default project already set.",
-      "type": "boolean",
-      "default": false
-    },
     "standalone": {
       "description": "Generate an application that is setup to use standalone components.",
       "type": "boolean",
+      "default": true,
+      "x-priority": "important"
+    },
+    "rootProject": {
+      "description": "Create an application at the root of the workspace.",
+      "type": "boolean",
+      "default": false,
+      "hidden": true,
+      "x-priority": "internal"
+    },
+    "minimal": {
+      "description": "Generate a Angular app with a minimal setup.",
+      "type": "boolean",
       "default": false
+    },
+    "bundler": {
+      "description": "Bundler to use to build the application.",
+      "type": "string",
+      "enum": ["esbuild", "webpack"],
+      "default": "esbuild",
+      "x-prompt": "Which bundler do you want to use to build the application?",
+      "x-priority": "important"
+    },
+    "ssr": {
+      "description": "Creates an application with Server-Side Rendering (SSR) and Static Site Generation (SSG/Prerendering) enabled.",
+      "type": "boolean",
+      "x-prompt": "Do you want to enable Server-Side Rendering (SSR) and Static Site Generation (SSG/Prerendering)?",
+      "default": false
+    },
+    "serverRouting": {
+      "description": "Creates a server application using the Server Routing and App Engine APIs (Developer Preview). _Note: this is only supported in Angular versions >= 19.0.0_.",
+      "type": "boolean"
     }
   },
   "additionalProperties": false,
-  "required": ["name"]
+  "required": ["directory"],
+  "examplesFile": "../../../docs/application-examples.md"
 }

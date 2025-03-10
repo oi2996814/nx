@@ -9,11 +9,11 @@ Runs a generator that creates and/or modifies files based on a generator from a 
 
 ## Usage
 
-```bash
+```shell
 nx generate <collection:generator>
 ```
 
-```bash
+```shell
 nx g <generator>
 ```
 
@@ -23,44 +23,44 @@ Install `nx` globally to invoke the command directly using `nx`, or use `npx nx`
 
 Generate a new Angular application:
 
-```bash
-nx generate @nrwl/angular:app myapp
+```shell
+nx generate @nx/angular:app apps/myapp
 ```
 
 Generate a new React application:
 
-```bash
-nx generate @nrwl/react:app myapp
+```shell
+nx generate @nx/react:app apps/myapp
 ```
 
 Generate a new web component application:
 
-```bash
-nx generate @nrwl/web:app myapp
+```shell
+nx generate @nx/web:app apps/myapp
 ```
 
 Generate a new Node application:
 
-```bash
-nx generate @nrwl/node:app myapp
+```shell
+nx generate @nx/node:app apps/myapp
 ```
 
 Generate a new Angular library application:
 
-```bash
-nx generate @nrwl/angular:library mylibrary
+```shell
+nx generate @nx/angular:library libs/mylibrary
 ```
 
 Generate a new React library application:
 
-```bash
-nx generate @nrwl/react:library mylibrary
+```shell
+nx generate @nx/react:library libs/mylibrary
 ```
 
 Generate a new Node library application:
 
-```bash
-nx generate @nrwl/node:library mylibrary
+```shell
+nx generate @nx/node:library libs/mylibrary
 ```
 
 ## Options
@@ -75,7 +75,7 @@ When true, disables interactive input prompts for options with a default.
 
 Default: `false`
 
-When true, disables interactive input prompts for options with a default.
+When true, preview the changes without updating files.
 
 ### force
 
@@ -92,6 +92,12 @@ When false, disables interactive input prompts.
 ### help
 
 Show help and display available generators in the default collection.
+
+### quiet
+
+Default: `false`
+
+When true, disables Nx specific logging related to running the generator or its outputs.
 
 ### version
 

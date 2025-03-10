@@ -1,30 +1,37 @@
-import { createTreeWithEmptyV1Workspace } from '@nrwl/devkit/testing';
+import 'nx/src/internal-testing-utils/mock-project-graph';
+
+import { createTreeWithEmptyWorkspace } from '@nx/devkit/testing';
 import runCommands from './run-commands';
-import { libraryGenerator } from '../library/library';
+import { readProjectConfiguration } from 'nx/src/generators/utils/project-configuration';
+
+// nx-ignore-next-line
+const { libraryGenerator } = require('@nx/js');
 
 describe('run-commands', () => {
   it('should generate a target', async () => {
-    const tree = createTreeWithEmptyV1Workspace();
+    const tree = createTreeWithEmptyWorkspace({ layout: 'apps-libs' });
     const opts = {
       name: 'custom',
       project: 'lib',
       command: 'echo 1',
       cwd: '/packages/foo',
-      outputs: '/dist/a, /dist/b, /dist/c',
+      outputs: 'dist/a, dist/b, dist/c',
     };
 
     await libraryGenerator(tree, {
-      name: 'lib',
-      standaloneConfig: false,
+      directory: 'lib',
     });
 
     await runCommands(tree, opts);
 
-    const customTarget = JSON.parse(tree.read('workspace.json').toString())
-      .projects['lib'].architect['custom'];
+    const customTarget = readProjectConfiguration(tree, 'lib').targets.custom;
     expect(customTarget).toEqual({
-      builder: 'nx:run-commands',
-      outputs: ['/dist/a', '/dist/b', '/dist/c'],
+      executor: 'nx:run-commands',
+      outputs: [
+        '{workspaceRoot}/dist/a',
+        '{workspaceRoot}/dist/b',
+        '{workspaceRoot}/dist/c',
+      ],
       options: {
         command: 'echo 1',
         cwd: '/packages/foo',

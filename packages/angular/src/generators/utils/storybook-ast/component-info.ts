@@ -4,15 +4,17 @@ import {
   normalizePath,
   Tree,
   visitNotIgnoredFiles,
-} from '@nrwl/devkit';
-import { tsquery } from '@phenomnomnominal/tsquery';
+} from '@nx/devkit';
+import { ensureTypescript } from '@nx/js/src/utils/typescript/ensure-typescript';
 import { basename, dirname, extname, relative } from 'path';
 import type { Identifier, SourceFile, Statement } from 'typescript';
-import { SyntaxKind } from 'typescript';
 import { getTsSourceFile } from '../../../utils/nx-devkit/ast-utils';
+import { getInstalledAngularVersionInfo } from '../version-utils';
 import type { EntryPoint } from './entry-point';
 import { getModuleDeclaredComponents } from './module-info';
-import { getAllFilesRecursivelyFromDir } from './tree-utilities';
+
+let tsModule: typeof import('typescript');
+let tsquery: typeof import('@phenomnomnominal/tsquery').tsquery;
 
 export interface ComponentInfo {
   componentFileName: string;
@@ -28,34 +30,39 @@ export function getComponentsInfo(
   moduleFilePaths: string[],
   projectName: string
 ): ComponentInfo[] {
-  return moduleFilePaths.flatMap((moduleFilePath) => {
-    const file = getTsSourceFile(tree, moduleFilePath);
-    const declaredComponents = getModuleDeclaredComponents(
-      file,
-      moduleFilePath,
-      projectName
-    );
-    if (declaredComponents.length === 0) {
-      return undefined;
-    }
-
-    const imports = file.statements.filter(
-      (statement) => statement.kind === SyntaxKind.ImportDeclaration
-    );
-
-    const componentsInfo = declaredComponents.map((componentName) =>
-      getComponentInfo(
-        tree,
-        entryPoint,
+  return moduleFilePaths
+    .flatMap((moduleFilePath) => {
+      const file = getTsSourceFile(tree, moduleFilePath);
+      const declaredComponents = getModuleDeclaredComponents(
         file,
-        imports,
         moduleFilePath,
-        componentName
-      )
-    );
+        projectName
+      );
+      if (declaredComponents.length === 0) {
+        return undefined;
+      }
 
-    return componentsInfo;
-  });
+      if (!tsModule) {
+        tsModule = ensureTypescript();
+      }
+      const imports = file.statements.filter(
+        (statement) => statement.kind === tsModule.SyntaxKind.ImportDeclaration
+      );
+
+      const componentsInfo = declaredComponents.map((componentName) =>
+        getComponentInfo(
+          tree,
+          entryPoint,
+          file,
+          imports,
+          moduleFilePath,
+          componentName
+        )
+      );
+
+      return componentsInfo;
+    })
+    .filter((f) => f !== undefined);
 }
 
 export function getStandaloneComponentsInfo(
@@ -105,35 +112,58 @@ export function getStandaloneComponentsInfo(
 }
 
 function getStandaloneComponents(tree: Tree, filePath: string): string[] {
+  if (!tsquery) {
+    ensureTypescript();
+    tsquery = require('@phenomnomnominal/tsquery').tsquery;
+  }
   const fileContent = tree.read(filePath, 'utf-8');
   const ast = tsquery.ast(fileContent);
-  const components = tsquery<Identifier>(
+
+  const { major: angularMajorVersion } = getInstalledAngularVersionInfo(tree);
+  if (angularMajorVersion < 19) {
+    // in angular 18 and below, standalone: false is the default, so only
+    // components with standalone: true are considered standalone
+    const components = tsquery<Identifier>(
+      ast,
+      'ClassDeclaration:has(Decorator > CallExpression:has(Identifier[name=Component]) ObjectLiteralExpression PropertyAssignment:has(Identifier[name=standalone]) > TrueKeyword) > Identifier',
+      { visitAllChildren: true }
+    );
+
+    return components.map((component) => component.getText());
+  }
+
+  // in angular 19 and above, standalone: true is the default, so all components
+  // except those with standalone: false are considered standalone
+  const standaloneComponentNodes = tsquery<Identifier>(
     ast,
-    'ClassDeclaration:has(Decorator > CallExpression:has(Identifier[name=Component]) ObjectLiteralExpression PropertyAssignment Identifier[name=standalone] ~ TrueKeyword) > Identifier',
+    'ClassDeclaration:has(Decorator > CallExpression:has(Identifier[name=Component]) ObjectLiteralExpression:not(:has(PropertyAssignment:has(Identifier[name=standalone]) > FalseKeyword))) > Identifier',
     { visitAllChildren: true }
   );
 
-  return components.map((component) => component.getText());
+  return standaloneComponentNodes.map((component) => component.getText());
 }
 
 function getComponentImportPath(
   componentName: string,
   imports: Statement[]
 ): string {
+  if (!tsModule) {
+    tsModule = ensureTypescript();
+  }
   const componentImportStatement = imports.find((statement) => {
     const namedImports = statement
       .getChildren()
-      .find((node) => node.kind === SyntaxKind.ImportClause)
+      .find((node) => node.kind === tsModule.SyntaxKind.ImportClause)
       .getChildren()
-      .find((node) => node.kind === SyntaxKind.NamedImports);
+      .find((node) => node.kind === tsModule.SyntaxKind.NamedImports);
 
     if (namedImports === undefined) return false;
 
     const importedIdentifiers = namedImports
       .getChildren()
-      .find((node) => node.kind === SyntaxKind.SyntaxList)
+      .find((node) => node.kind === tsModule.SyntaxKind.SyntaxList)
       .getChildren()
-      .filter((node) => node.kind === SyntaxKind.ImportSpecifier)
+      .filter((node) => node.kind === tsModule.SyntaxKind.ImportSpecifier)
       .map((node) => node.getText());
 
     return importedIdentifiers.includes(componentName);
@@ -141,7 +171,7 @@ function getComponentImportPath(
 
   const importPath = componentImportStatement
     .getChildren()
-    .find((node) => node.kind === SyntaxKind.StringLiteral)
+    .find((node) => node.kind === tsModule.SyntaxKind.StringLiteral)
     .getText()
     .slice(1, -1);
 
@@ -157,6 +187,11 @@ function getComponentInfo(
   componentName: string
 ): ComponentInfo {
   try {
+    if (!tsquery) {
+      ensureTypescript();
+      tsquery = require('@phenomnomnominal/tsquery').tsquery;
+    }
+
     const moduleFolderPath = dirname(moduleFilePath);
 
     // try to get the component from the same file (inline scam)
@@ -223,7 +258,12 @@ function getComponentInfoFromDir(
 ): ComponentInfo {
   let path = null;
   let componentFileName = null;
-  const componentImportPathChildren = getAllFilesRecursivelyFromDir(tree, dir);
+
+  const componentImportPathChildren: string[] = [];
+  visitNotIgnoredFiles(tree, dir, (filePath) => {
+    componentImportPathChildren.push(normalizePath(filePath));
+  });
+
   for (const candidateFile of componentImportPathChildren) {
     if (candidateFile.endsWith('.ts')) {
       const content = tree.read(candidateFile, 'utf-8');

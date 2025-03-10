@@ -1,59 +1,80 @@
 import {
   addDependenciesToPackageJson,
-  convertNxGenerator,
+  createProjectGraphAsync,
   formatFiles,
+  GeneratorCallback,
+  readNxJson,
   removeDependenciesFromPackageJson,
+  runTasksInSerial,
   Tree,
-} from '@nrwl/devkit';
-import { Schema } from './schema';
+} from '@nx/devkit';
+import { addPluginV1 } from '@nx/devkit/src/utils/add-plugin';
+import { createNodes } from '../../../plugins/plugin';
 import {
-  expoVersion,
-  expoSplashScreenVersion,
-  expoStatusBarVersion,
-  nxVersion,
-  reactNativeVersion,
-  reactNativeWebVersion,
-  typesReactNativeVersion,
-  expoMetroConfigVersion,
-  metroVersion,
-  testingLibraryReactNativeVersion,
-  testingLibraryJestNativeVersion,
-  jestExpoVersion,
-  reactNativeSvgTransformerVersion,
-  reactNativeSvgVersion,
   expoCliVersion,
-  svgrWebpackVersion,
-  babelPresetExpoVersion,
-  easCliVersion,
+  expoVersion,
+  nxVersion,
+  reactDomVersion,
+  reactNativeVersion,
+  reactVersion,
 } from '../../utils/versions';
 
-import {
-  reactDomVersion,
-  reactVersion,
-  reactTestRendererVersion,
-  typesReactVersion,
-} from '@nrwl/react/src/utils/versions';
-import { runTasksInSerial } from '@nrwl/workspace/src/utilities/run-tasks-in-serial';
-import { jestInitGenerator } from '@nrwl/jest';
-import { detoxInitGenerator } from '@nrwl/detox';
-
 import { addGitIgnoreEntry } from './lib/add-git-ignore-entry';
-import { initRootBabelConfig } from './lib/init-root-babel-config';
+import { Schema } from './schema';
 
-export async function expoInitGenerator(host: Tree, schema: Schema) {
+export function expoInitGenerator(tree: Tree, schema: Schema) {
+  return expoInitGeneratorInternal(tree, { addPlugin: false, ...schema });
+}
+
+export async function expoInitGeneratorInternal(host: Tree, schema: Schema) {
+  const nxJson = readNxJson(host);
+  const addPluginDefault =
+    process.env.NX_ADD_PLUGINS !== 'false' &&
+    nxJson.useInferencePlugins !== false;
+  schema.addPlugin ??= addPluginDefault;
+
   addGitIgnoreEntry(host);
-  initRootBabelConfig(host);
 
-  const tasks = [moveDependency(host), updateDependencies(host)];
+  if (schema.addPlugin) {
+    await addPluginV1(
+      host,
+      await createProjectGraphAsync(),
+      '@nx/expo/plugin',
+      createNodes,
+      {
+        startTargetName: ['start', 'expo:start', 'expo-start'],
+        buildTargetName: ['build', 'expo:build', 'expo-build'],
+        prebuildTargetName: ['prebuild', 'expo:prebuild', 'expo-prebuild'],
+        serveTargetName: ['serve', 'expo:serve', 'expo-serve'],
+        installTargetName: ['install', 'expo:install', 'expo-install'],
+        exportTargetName: ['export', 'expo:export', 'expo-export'],
+        submitTargetName: ['submit', 'expo:submit', 'expo-submit'],
+        runIosTargetName: ['run-ios', 'expo:run-ios', 'expo-run-ios'],
+        runAndroidTargetName: [
+          'run-android',
+          'expo:run-android',
+          'expo-run-android',
+        ],
+        buildDepsTargetName: [
+          'build-deps',
+          'expo:build-deps',
+          'expo-build-deps',
+        ],
+        watchDepsTargetName: [
+          'watch-deps',
+          'expo:watch-deps',
+          'expo-watch-deps',
+        ],
+      },
 
-  if (!schema.unitTestRunner || schema.unitTestRunner === 'jest') {
-    const jestTask = jestInitGenerator(host, {});
-    tasks.push(jestTask);
+      schema.updatePackageScripts
+    );
   }
 
-  if (!schema.e2eTestRunner || schema.e2eTestRunner === 'detox') {
-    const detoxTask = await detoxInitGenerator(host, { skipFormat: true });
-    tasks.push(detoxTask);
+  const tasks: GeneratorCallback[] = [];
+  if (!schema.skipPackageJson) {
+    tasks.push(moveDependency(host));
+    tasks.push(updateDependencies(host, schema));
   }
 
   if (!schema.skipFormat) {
@@ -63,7 +84,7 @@ export async function expoInitGenerator(host: Tree, schema: Schema) {
   return runTasksInSerial(...tasks);
 }
 
-export function updateDependencies(host: Tree) {
+export function updateDependencies(host: Tree, schema: Schema) {
   return addDependenciesToPackageJson(
     host,
     {
@@ -71,33 +92,18 @@ export function updateDependencies(host: Tree) {
       'react-dom': reactDomVersion,
       'react-native': reactNativeVersion,
       expo: expoVersion,
-      'expo-splash-screen': expoSplashScreenVersion,
-      'expo-status-bar': expoStatusBarVersion,
-      'react-native-web': reactNativeWebVersion,
-      '@expo/metro-config': expoMetroConfigVersion,
-      'react-native-svg-transformer': reactNativeSvgTransformerVersion,
-      'react-native-svg': reactNativeSvgVersion,
     },
     {
-      '@nrwl/expo': nxVersion,
-      '@types/react': typesReactVersion,
-      '@types/react-native': typesReactNativeVersion,
-      'metro-resolver': metroVersion,
-      'react-test-renderer': reactTestRendererVersion,
-      '@testing-library/react-native': testingLibraryReactNativeVersion,
-      '@testing-library/jest-native': testingLibraryJestNativeVersion,
-      'jest-expo': jestExpoVersion,
-      'expo-cli': expoCliVersion,
-      'eas-cli': easCliVersion,
-      '@svgr/webpack': svgrWebpackVersion,
-      'babel-preset-expo': babelPresetExpoVersion,
-    }
+      '@nx/expo': nxVersion,
+      '@expo/cli': expoCliVersion,
+    },
+    undefined,
+    schema.keepExistingVersions
   );
 }
 
 function moveDependency(host: Tree) {
-  return removeDependenciesFromPackageJson(host, ['@nrwl/react-native'], []);
+  return removeDependenciesFromPackageJson(host, ['@nx/react-native'], []);
 }
 
 export default expoInitGenerator;
-export const reactNativeInitSchematic = convertNxGenerator(expoInitGenerator);

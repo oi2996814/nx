@@ -1,10 +1,5 @@
-import { buildTargetFromScript, PackageJson } from './package-json';
-import { join, relative } from 'path';
 import { ProjectGraph, ProjectGraphProjectNode } from '../config/project-graph';
-import { readJsonFile } from './fileutils';
-import { normalizePath } from './path';
 import { readCachedProjectGraph } from '../project-graph/project-graph';
-import { TargetConfiguration } from '../config/workspace-json-project-json';
 
 export function projectHasTarget(
   project: ProjectGraphProjectNode,
@@ -29,28 +24,9 @@ export function projectHasTargetAndConfiguration(
   );
 }
 
-export function mergeNpmScriptsWithTargets(
-  projectRoot: string,
-  targets
-): Record<string, TargetConfiguration> {
-  try {
-    const { scripts, nx }: PackageJson = readJsonFile(
-      join(projectRoot, 'package.json')
-    );
-    const res: Record<string, TargetConfiguration> = {};
-    // handle no scripts
-    Object.keys(scripts || {}).forEach((script) => {
-      res[script] = buildTargetFromScript(script, nx);
-    });
-    return { ...res, ...(targets || {}) };
-  } catch (e) {
-    return targets;
-  }
-}
-
 export function getSourceDirOfDependentProjects(
   projectName: string,
-  projectGraph = readCachedProjectGraph()
+  projectGraph: ProjectGraph = readCachedProjectGraph()
 ): [projectDirs: string[], warnings: string[]] {
   if (!projectGraph.nodes[projectName]) {
     throw new Error(
@@ -73,54 +49,25 @@ export function getSourceDirOfDependentProjects(
 }
 
 /**
- * Finds the project node name by a file that lives within it's src root
- * @param projRelativeDirPath directory path relative to the workspace root
- * @param projectGraph
- */
-export function getProjectNameFromDirPath(
-  projRelativeDirPath: string,
-  projectGraph = readCachedProjectGraph()
-) {
-  let parentNodeName = null;
-  for (const [nodeName, node] of Object.entries(projectGraph.nodes)) {
-    const normalizedRootPath = normalizePath(node.data.root);
-    const normalizedProjRelPath = normalizePath(projRelativeDirPath);
-
-    const relativePath = relative(normalizedRootPath, normalizedProjRelPath);
-    const isMatch = relativePath && !relativePath.startsWith('..');
-
-    if (isMatch || normalizedRootPath === normalizedProjRelPath) {
-      parentNodeName = nodeName;
-      break;
-    }
-  }
-
-  if (!parentNodeName) {
-    throw new Error(
-      `Could not find any project containing the file "${projRelativeDirPath}" among it's project files`
-    );
-  }
-
-  return parentNodeName;
-}
-
-/**
  * Find all internal project dependencies.
- * All the external (npm) dependencies will be filtered out
+ * All the external (npm) dependencies will be filtered out unless includeExternalDependencies is set to true
  * @param {string} parentNodeName
  * @param {ProjectGraph} projectGraph
+ * @param includeExternalDependencies
  * @returns {string[]}
  */
-function findAllProjectNodeDependencies(
+export function findAllProjectNodeDependencies(
   parentNodeName: string,
-  projectGraph = readCachedProjectGraph()
+  projectGraph: ProjectGraph = readCachedProjectGraph(),
+  includeExternalDependencies = false
 ): string[] {
   const dependencyNodeNames = new Set<string>();
 
   collectDependentProjectNodesNames(
     projectGraph as ProjectGraph,
     dependencyNodeNames,
-    parentNodeName
+    parentNodeName,
+    includeExternalDependencies
   );
 
   return Array.from(dependencyNodeNames);
@@ -130,7 +77,8 @@ function findAllProjectNodeDependencies(
 function collectDependentProjectNodesNames(
   nxDeps: ProjectGraph,
   dependencyNodeNames: Set<string>,
-  parentNodeName: string
+  parentNodeName: string,
+  includeExternalDependencies: boolean
 ) {
   const dependencies = nxDeps.dependencies[parentNodeName];
   if (!dependencies) {
@@ -142,14 +90,18 @@ function collectDependentProjectNodesNames(
   for (const dependency of dependencies) {
     const dependencyName = dependency.target;
 
-    // we're only intersted in project dependencies, not npm
-    if (dependencyName.startsWith('npm:')) {
-      continue;
-    }
-
     // skip dependencies already added (avoid circular dependencies)
     if (dependencyNodeNames.has(dependencyName)) {
       continue;
+    }
+
+    // we're only interested in internal nodes, not external
+    if (nxDeps.externalNodes?.[dependencyName]) {
+      if (includeExternalDependencies) {
+        dependencyNodeNames.add(dependencyName);
+      } else {
+        continue;
+      }
     }
 
     dependencyNodeNames.add(dependencyName);
@@ -158,7 +110,8 @@ function collectDependentProjectNodesNames(
     collectDependentProjectNodesNames(
       nxDeps,
       dependencyNodeNames,
-      dependencyName
+      dependencyName,
+      includeExternalDependencies
     );
   }
 }

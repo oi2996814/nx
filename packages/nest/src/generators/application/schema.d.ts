@@ -1,19 +1,24 @@
-import { Linter } from '@nrwl/linter';
-import { UnitTestRunner } from '../../utils/test-runners';
+import type { Linter, LinterType } from '@nx/eslint';
 
 export interface ApplicationGeneratorOptions {
-  name: string;
-  directory?: string;
+  directory: string;
+  name?: string;
   frontendProject?: string;
-  linter?: Linter;
+  linter?: Linter | LinterType;
   skipFormat?: boolean;
   skipPackageJson?: boolean;
   standaloneConfig?: boolean;
   tags?: string;
-  unitTestRunner?: UnitTestRunner;
+  unitTestRunner?: 'jest' | 'none';
+  e2eTestRunner?: 'jest' | 'none';
   setParserOptionsProject?: boolean;
+  rootProject?: boolean;
+  strict?: boolean;
+  addPlugin?: boolean;
+  useTsSolution?: boolean;
 }
 
 interface NormalizedOptions extends ApplicationGeneratorOptions {
+  appProjectName: string;
   appProjectRoot: Path;
 }

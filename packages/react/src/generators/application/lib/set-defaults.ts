@@ -1,47 +1,48 @@
-import {
-  readWorkspaceConfiguration,
-  Tree,
-  updateWorkspaceConfiguration,
-} from '@nrwl/devkit';
+import { readNxJson, Tree, updateNxJson } from '@nx/devkit';
 import { NormalizedSchema } from '../schema';
 
 export function setDefaults(host: Tree, options: NormalizedSchema) {
-  if (options.skipWorkspaceJson) {
+  if (options.skipNxJson) {
     return;
   }
 
-  const workspace = readWorkspaceConfiguration(host);
+  const nxJson = readNxJson(host);
 
-  if (!options.skipDefaultProject && !workspace.defaultProject) {
-    workspace.defaultProject = options.projectName;
+  if (options.rootProject) {
+    nxJson.defaultProject = options.projectName;
   }
 
-  workspace.generators = workspace.generators || {};
-  workspace.generators['@nrwl/react'] =
-    workspace.generators['@nrwl/react'] || {};
+  nxJson.generators = nxJson.generators || {};
+  nxJson.generators['@nx/react'] = nxJson.generators['@nx/react'] || {};
 
-  const prev = { ...workspace.generators['@nrwl/react'] };
+  const prev = { ...nxJson.generators['@nx/react'] };
 
-  workspace.generators = {
-    ...workspace.generators,
-    '@nrwl/react': {
+  const appDefaults = {
+    babel: true,
+    style: options.style,
+    linter: options.linter,
+    bundler: options.bundler,
+    ...prev.application,
+  };
+  const componentDefaults = {
+    style: options.style,
+    ...prev.component,
+  };
+  const libDefaults = {
+    style: options.style,
+    linter: options.linter,
+    ...prev.library,
+  };
+
+  nxJson.generators = {
+    ...nxJson.generators,
+    '@nx/react': {
       ...prev,
-      application: {
-        style: options.style,
-        linter: options.linter,
-        ...prev.application,
-      },
-      component: {
-        style: options.style,
-        ...prev.component,
-      },
-      library: {
-        style: options.style,
-        linter: options.linter,
-        ...prev.library,
-      },
+      application: appDefaults,
+      component: componentDefaults,
+      library: libDefaults,
     },
   };
 
-  updateWorkspaceConfiguration(host, workspace);
+  updateNxJson(host, nxJson);
 }
